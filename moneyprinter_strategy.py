@@ -778,6 +778,46 @@ class MoneyPrinterStrategy:
         
         return all_metrics
     
+    def predict(self, features_df: pd.DataFrame) -> np.ndarray:
+        """
+        Make predictions using the trained ensemble.
+        
+        Args:
+            features_df: Feature matrix
+            
+        Returns:
+            Array of predictions (0=hold, 1=buy, 2=sell)
+        """
+        if not self.ensemble_predictor.trained:
+            raise ValueError("Models not trained yet. Call train_models first.")
+        
+        try:
+            # Get ensemble predictions
+            predictions, probabilities = self.ensemble_predictor.predict_ensemble(features_df)
+            
+            # Combine predictions using voting
+            if len(predictions) > 0:
+                # Stack predictions and take majority vote
+                pred_matrix = np.stack(predictions, axis=1)
+                final_predictions = []
+                
+                for i in range(len(features_df)):
+                    row_preds = pred_matrix[i]
+                    # Use most common prediction
+                    unique, counts = np.unique(row_preds, return_counts=True)
+                    majority_pred = unique[np.argmax(counts)]
+                    final_predictions.append(majority_pred)
+                
+                return np.array(final_predictions)
+            else:
+                # Default to hold if no predictions
+                return np.zeros(len(features_df))
+                
+        except Exception as e:
+            logger.error(f"Error making predictions: {e}")
+            # Return default hold signals
+            return np.zeros(len(features_df))
+    
     def _max_consecutive(self, series: pd.Series) -> int:
         """Calculate maximum consecutive True values"""
         return series.astype(int).groupby((~series).cumsum()).sum().max()
