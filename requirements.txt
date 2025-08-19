@@ -20,3 +20,5 @@ pyyaml
 asyncio-mqtt
 schedule
 python-telegram-bot
+textblob
+nltk
