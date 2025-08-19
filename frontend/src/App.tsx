@@ -11,15 +11,17 @@ import { LoadingScreen } from './components/common/LoadingScreen'
 
 // Pages
 import { LoginPage } from './pages/LoginPage'
-import { RegisterPage } from './pages/RegisterPage'
-import { DashboardPage } from './pages/DashboardPage'
-import { TradingPage } from './pages/TradingPage'
-import { PortfolioPage } from './pages/PortfolioPage'
-import { BacktestPage } from './pages/BacktestPage'
-import { StrategiesPage } from './pages/StrategiesPage'
-import { AnalyticsPage } from './pages/AnalyticsPage'
-import { SettingsPage } from './pages/SettingsPage'
-import { AdminPage } from './pages/AdminPage'
+import DashboardPage from './pages/DashboardPage'
+import { 
+  RegisterPage,
+  TradingPage,
+  PortfolioPage,
+  BacktestPage,
+  StrategiesPage,
+  AnalyticsPage,
+  SettingsPage,
+  AdminPage
+} from './pages/index'
 
 const App: React.FC = () => {
   const dispatch = useDispatch()

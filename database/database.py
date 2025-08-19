@@ -7,7 +7,6 @@ import os
 import logging
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import QueuePool
 from sqlalchemy.orm import sessionmaker
 from .models import Base
 
@@ -22,7 +21,6 @@ DATABASE_URL = os.getenv(
 # Create async engine with connection pooling
 engine = create_async_engine(
     DATABASE_URL,
-    poolclass=QueuePool,
     pool_size=10,
     max_overflow=20,
     pool_pre_ping=True,
