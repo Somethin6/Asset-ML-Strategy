@@ -29,7 +29,7 @@ def frac_diff_ffd(series, d, thres=1e-5):
     width = len(w) - 1
     df = {}
     for name in series.columns:
-        seriesF = series[[name]].fillna(method='ffill').dropna()
+        seriesF = series[[name]].ffill().dropna()  # Updated deprecated method
         df_ = pd.Series(dtype=float)
         for iloc1 in range(width, len(seriesF)):
             loc0, loc1 = seriesF.index[iloc1 - width], seriesF.index[iloc1]
@@ -96,9 +96,21 @@ def get_autoencoder_features(df, window_size=20, encoding_dim=5):
     # Use returns for training the autoencoder
     returns = df['close'].pct_change().dropna()
 
-    # Create rolling windows of returns
-    windows = returns.rolling(window=window_size).apply(lambda x: x.tolist(), raw=False).dropna()
-    data_for_autoencoder = pd.DataFrame(windows.tolist(), index=windows.index)
+    # Create rolling windows of returns - fixed the apply function
+    windows_list = []
+    for i in range(window_size, len(returns)):
+        window_data = returns.iloc[i-window_size:i].values
+        windows_list.append(window_data)
+    
+    if not windows_list:
+        # If we don't have enough data, return empty DataFrame
+        feature_df = pd.DataFrame(index=df.index, columns=[f'ae_feat_{i}' for i in range(encoding_dim)])
+        feature_df.fillna(0, inplace=True)
+        return feature_df
+    
+    # Create DataFrame for autoencoder training
+    window_indices = returns.index[window_size:]
+    data_for_autoencoder = pd.DataFrame(windows_list, index=window_indices)
 
     # Train the autoencoder
     trained_model = train_autoencoder(data_for_autoencoder, input_dim=window_size, encoding_dim=encoding_dim)
@@ -109,6 +121,10 @@ def get_autoencoder_features(df, window_size=20, encoding_dim=5):
         features = trained_model.get_features(all_windows_tensor).numpy()
 
     feature_df = pd.DataFrame(features, index=data_for_autoencoder.index, columns=[f'ae_feat_{i}' for i in range(encoding_dim)])
+    
+    # Align with original dataframe index
+    feature_df = feature_df.reindex(df.index).fillna(0)
+    
     return feature_df
 
 # --- Main Feature Engineering Function ---
@@ -133,8 +149,8 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     df_with_features = df_with_features.join(ae_features)
 
     # Handle NaNs from merging and feature creation
-    df_with_features.fillna(method='ffill', inplace=True)
-    df_with_features.fillna(method='bfill', inplace=True)
+    df_with_features.ffill(inplace=True)  # Updated deprecated method
+    df_with_features.bfill(inplace=True)  # Updated deprecated method
     df_with_features.dropna(inplace=True) # drop any remaining NaNs
 
     print("Features added successfully.")

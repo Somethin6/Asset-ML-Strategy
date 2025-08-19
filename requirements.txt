@@ -12,3 +12,11 @@ seaborn
 openpyxl
 gymnasium
 stable-baselines3
+yfinance
+requests
+streamlit
+plotly
+pyyaml
+asyncio-mqtt
+schedule
+python-telegram-bot

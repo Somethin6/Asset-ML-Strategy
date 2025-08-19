@@ -28,7 +28,7 @@ def objective(trial: optuna.Trial) -> float:
 
     try:
         # 1. Load Data
-        df = load_data('data/dummy_data.csv')
+        df = load_data('data/market_data.csv')
 
         # 2. Feature Engineering
         # We need to create a new add_features function that accepts hyperparameters
@@ -46,8 +46,8 @@ def objective(trial: optuna.Trial) -> float:
             df_with_features = df_with_ta.join(frac_diff_close)
             ae_features = get_autoencoder_features(df, window_size=window, encoding_dim=encoding)
             df_with_features = df_with_features.join(ae_features)
-            df_with_features.fillna(method='ffill', inplace=True)
-            df_with_features.fillna(method='bfill', inplace=True)
+            df_with_features.ffill(inplace=True)  # Updated deprecated method
+            df_with_features.bfill(inplace=True)  # Updated deprecated method
             df_with_features.dropna(inplace=True)
             return df_with_features
 

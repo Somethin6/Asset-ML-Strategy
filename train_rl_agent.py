@@ -11,7 +11,7 @@ def train_agent():
     """
     # 1. Load and preprocess data
     print("Loading and preprocessing data...")
-    df = load_data('data/dummy_data.csv')
+    df = load_data('data/market_data.csv')
 
     # 2. Add features
     print("Adding features...")

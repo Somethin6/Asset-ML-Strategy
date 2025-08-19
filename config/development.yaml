@@ -1,0 +1,42 @@
+alerts:
+  alert_on_high_profit: 0.1
+  alert_on_large_drawdown: 0.05
+  alert_on_model_degradation: 0.1
+  email_recipients: []
+  enable_email_alerts: false
+  enable_webhook_alerts: false
+  webhook_url: null
+data:
+  backup_data_source: synthetic
+  data_update_frequency: 1
+  data_validation: true
+  lookback_period: 90
+  min_data_quality_score: 0.8
+  primary_data_source: synthetic
+environment: development
+log_level: DEBUG
+model:
+  cross_validation_folds: 3
+  ensemble_models:
+  - rf
+  - xgb
+  - lgb
+  - gb
+  - svm
+  - lr
+  feature_selection_threshold: 0.01
+  hyperparameter_optimization: false
+  model_retrain_frequency: 24
+  prediction_threshold: 0.6
+  validation_split: 0.2
+results_directory: results
+save_results: true
+trading:
+  initial_capital: 10000.0
+  kelly_multiplier: 0.1
+  max_daily_loss: 0.02
+  max_drawdown: 0.1
+  max_position_size: 0.05
+  risk_free_rate: 0.02
+  slippage: 0.0005
+  transaction_cost: 0.001
