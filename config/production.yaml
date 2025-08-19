@@ -1,43 +1,177 @@
+# Production Configuration for Asset-ML-Strategy
+# This configuration provides enterprise-grade settings for production deployment
+
+# Application Settings
+app:
+  name: "Asset-ML-Strategy"
+  version: "2.0.0"
+  environment: "production"
+  debug: false
+  log_level: "INFO"
+  timezone: "UTC"
+
+# Database Configuration
+database:
+  url: "postgresql+asyncpg://assetML_user:${POSTGRES_PASSWORD}@postgres:5432/assetML"
+  pool_size: 10
+  max_overflow: 20
+  pool_pre_ping: true
+  pool_recycle: 3600
+  echo: false
+  
+  # Migration settings
+  auto_migrate: true
+  backup_enabled: true
+  backup_retention_days: 30
+
+# Redis Configuration
+redis:
+  url: "redis://default:${REDIS_PASSWORD}@redis:6379"
+  max_connections: 100
+  retry_on_timeout: true
+  decode_responses: true
+  socket_timeout: 5
+  socket_connect_timeout: 5
+  
+  # Cache settings
+  default_ttl: 3600  # 1 hour
+  session_ttl: 86400  # 24 hours
+
+# Authentication & Security
+auth:
+  jwt_secret: "${JWT_SECRET}"
+  jwt_algorithm: "HS256"
+  jwt_expiration_hours: 24
+  refresh_token_expiration_days: 7
+  password_min_length: 8
+  require_email_verification: true
+  max_login_attempts: 5
+  lockout_duration_minutes: 15
+
+# Trading Configuration
+trading:
+  # Capital and Risk Management
+  initial_capital: 100000.0
+  min_initial_capital: 1000.0
+  max_initial_capital: 10000000.0
+  
+  # Position sizing
+  max_position_size: 0.10  # 10% of portfolio
+  max_position_size_limit: 0.25    # 25% hard limit
+  min_position_size: 0.01          # 1% minimum
+  
+  # Risk limits
+  max_daily_loss: 0.02     # 2% daily loss limit
+  max_daily_loss_limit: 0.05       # 5% hard limit
+  max_drawdown: 0.10         # 10% max drawdown
+  
+  # Kelly Criterion settings
+  kelly_multiplier: 0.25           # Conservative Kelly
+  kelly_lookback_trades: 50        # Trades to consider for Kelly calculation
+  
+  # Transaction costs
+  transaction_cost: 0.001           # 0.1% commission
+  slippage: 0.0005           # 0.05% slippage
+  spread_cost: 0.0002             # 0.02% spread cost
+  risk_free_rate: 0.02
+
+# Machine Learning Configuration
+model:
+  # Ensemble models
+  ensemble_models: ["rf", "xgb", "lgb", "gb", "svm", "lr"]
+  
+  # Feature engineering
+  feature_selection_threshold: 0.01
+  
+  # Training settings
+  cross_validation_folds: 5
+  validation_split: 0.2
+  hyperparameter_optimization: true
+  model_retrain_frequency: 24
+  
+  # Prediction settings
+  prediction_threshold: 0.6
+
+# Data Configuration
+data:
+  # Data sources
+  primary_data_source: "yfinance"
+  backup_data_source: "alpha_vantage"
+    
+  # Data collection
+  data_update_frequency: 1
+  lookback_period: 365
+  
+  # Data validation
+  data_validation: true
+  min_data_quality_score: 0.8
+
+# Results and Logging
+results_directory: "results"
+save_results: true
+log_level: "INFO"
+environment: "production"
+
+# Alerting
 alerts:
-  alert_on_high_profit: 0.1
-  alert_on_large_drawdown: 0.05
-  alert_on_model_degradation: 0.1
-  email_recipients:
-  - trader@example.com
   enable_email_alerts: true
   enable_webhook_alerts: true
   webhook_url: null
-data:
-  backup_data_source: alpha_vantage
-  data_update_frequency: 1
-  data_validation: true
-  lookback_period: 365
-  min_data_quality_score: 0.8
-  primary_data_source: yfinance
-environment: production
-log_level: INFO
-model:
-  cross_validation_folds: 5
-  ensemble_models:
-  - rf
-  - xgb
-  - lgb
-  - gb
-  - svm
-  - lr
-  feature_selection_threshold: 0.01
-  hyperparameter_optimization: true
-  model_retrain_frequency: 24
-  prediction_threshold: 0.6
-  validation_split: 0.2
-results_directory: results
-save_results: true
-trading:
-  initial_capital: 100000.0
-  kelly_multiplier: 0.25
-  max_daily_loss: 0.02
-  max_drawdown: 0.1
-  max_position_size: 0.1
-  risk_free_rate: 0.02
-  slippage: 0.0005
-  transaction_cost: 0.001
+  email_recipients:
+    - "trader@example.com"
+  alert_on_high_profit: 0.1
+  alert_on_large_drawdown: 0.05
+  alert_on_model_degradation: 0.1
+
+# API Configuration
+api:
+  host: "0.0.0.0"
+  port: 8000
+  workers: 4
+  reload: false
+  
+  # CORS settings
+  cors:
+    allowed_origins:
+      - "http://localhost:3000"
+      - "https://yourdomain.com"
+    allowed_methods: ["GET", "POST", "PUT", "DELETE"]
+    allowed_headers: ["*"]
+    allow_credentials: true
+
+# Monitoring & Observability
+monitoring:
+  # Metrics
+  metrics:
+    enabled: true
+    prometheus_port: 9090
+    custom_metrics: true
+    
+  # Health checks
+  health_checks:
+    enabled: true
+    interval_seconds: 30
+    timeout_seconds: 5
+
+# Feature Flags
+features:
+  # Trading features
+  live_trading: true
+  paper_trading: true
+  backtesting: true
+  optimization: true
+  
+  # Advanced features
+  multi_asset_trading: false
+  options_trading: false
+  crypto_trading: false
+  
+  # Analytics features
+  advanced_analytics: true
+  risk_analytics: true
+  performance_attribution: true
+  
+  # UI features
+  real_time_charts: true
+  custom_dashboards: true
+  api_access: true
