@@ -191,68 +191,123 @@ def run_quick_demo():
     """Run a quick ML demonstration"""
     print("\n📊 Running Quick ML Demo...")
     
-    demo_scripts = [
-        ('quick_demo.py', 'Quick Demo'),
-        ('ultimate_demo.py', 'Ultimate Demo'),
-        ('test_functionality.py', 'Core Functionality Test')
+    # Test different demo options in order of preference
+    demo_options = [
+        ('test_functionality.py', 'Core Functionality Test', True),
+        ('enhanced_ml_test.py', 'Enhanced ML Test', False),
+        ('ultimate_demo.py', 'Ultimate Demo', False),
+        ('quick_demo.py', 'Quick Demo', False),
     ]
     
-    for script, name in demo_scripts:
+    print("Available demo options:")
+    for i, (script, name, is_core) in enumerate(demo_options):
         if os.path.exists(script):
-            print(f"🎯 Running {name}...")
-            import subprocess
-            result = subprocess.run([sys.executable, script])
-            if result.returncode == 0:
-                print(f"✅ {name} completed successfully!")
-            else:
-                print(f"⚠️ {name} completed with warnings")
-            input("\nPress Enter to continue...")
+            status = "✅ CORE" if is_core else "✅"
+            print(f"  {i+1}. {status} {name}")
+        else:
+            print(f"  {i+1}. ❌ {name} (not found)")
+    
+    # Try to run the first available demo
+    for script, name, is_core in demo_options:
+        if os.path.exists(script):
+            print(f"\n🎯 Running {name}...")
+            try:
+                import subprocess
+                result = subprocess.run([sys.executable, script], timeout=120)
+                if result.returncode == 0:
+                    print(f"✅ {name} completed successfully!")
+                else:
+                    print(f"⚠️ {name} completed with return code {result.returncode}")
+            except subprocess.TimeoutExpired:
+                print(f"⏰ {name} timed out (>120s)")
+            except Exception as e:
+                print(f"❌ {name} failed: {e}")
+                continue
+            
+            print("\nDemo completed. Would you like to:")
+            print("1. Run another demo")
+            print("2. Return to main menu")
+            
+            try:
+                choice = input("Choose (1-2): ").strip()
+                if choice == '1':
+                    continue
+                else:
+                    return
+            except (EOFError, KeyboardInterrupt):
+                return
+            
             return
     
     # If no demo scripts found, create a simple inline demo
-    print("🎯 Running inline ML demo...")
+    print("🎯 No demo scripts found - running inline ML demo...")
     try:
-        import pandas as pd
-        import numpy as np
-        from sklearn.ensemble import RandomForestRegressor
-        from sklearn.model_selection import train_test_split
-        from sklearn.metrics import r2_score
-        
-        # Generate sample data
-        dates = pd.date_range('2020-01-01', periods=100)
-        np.random.seed(42)
-        data = {
-            'Date': dates,
-            'Price': 100 + np.cumsum(np.random.randn(100) * 0.5),
-            'Volume': np.random.randint(1000, 10000, 100),
-            'Feature1': np.random.randn(100),
-            'Feature2': np.random.randn(100)
-        }
-        df = pd.DataFrame(data)
-        
-        # Prepare ML model
-        X = df[['Volume', 'Feature1', 'Feature2']]
-        y = df['Price']
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-        
-        # Train model
-        model = RandomForestRegressor(random_state=42)
-        model.fit(X_train, y_train)
-        
-        # Make predictions
-        y_pred = model.predict(X_test)
-        r2 = r2_score(y_test, y_pred)
-        
-        print(f"✅ Demo Results:")
-        print(f"   📊 Data points: {len(df)}")
-        print(f"   🎯 R² Score: {r2:.4f}")
-        print(f"   📈 Price range: ${df['Price'].min():.2f} - ${df['Price'].max():.2f}")
-        print(f"   🎉 Demo completed successfully!")
-        
+        run_inline_demo()
     except Exception as e:
         print(f"❌ Demo failed: {e}")
+
+def run_inline_demo():
+    """Run a simple inline demo"""
+    import pandas as pd
+    import numpy as np
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import r2_score
     
-    input("\nPress Enter to continue...")
+    print("📊 Generating sample data...")
+    # Generate sample data
+    dates = pd.date_range('2020-01-01', periods=100)
+    np.random.seed(42)
+    
+    base_price = 100
+    prices = [base_price]
+    
+    # Generate realistic price movements
+    for i in range(1, 100):
+        change = np.random.normal(0.001, 0.02)  # Small daily changes
+        new_price = prices[-1] * (1 + change)
+        prices.append(max(new_price, 10))  # Ensure positive prices
+    
+    data = {
+        'Date': dates,
+        'Price': prices,
+        'Volume': np.random.randint(50000, 200000, 100),
+        'MA_5': pd.Series(prices).rolling(5).mean(),
+        'Volatility': pd.Series(prices).pct_change().rolling(5).std() * np.sqrt(252)
+    }
+    df = pd.DataFrame(data).dropna()
+    
+    print(f"✅ Generated {len(df)} samples")
+    print(f"   📈 Price range: ${df['Price'].min():.2f} - ${df['Price'].max():.2f}")
+    
+    # Prepare ML model
+    X = df[['Volume', 'MA_5', 'Volatility']]
+    y = df['Price']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+    
+    print("🤖 Training Random Forest model...")
+    # Train model
+    model = RandomForestRegressor(n_estimators=50, random_state=42)
+    model.fit(X_train, y_train)
+    
+    # Make predictions
+    y_pred = model.predict(X_test)
+    r2 = r2_score(y_test, y_pred)
+    
+    print(f"✅ Demo Results:")
+    print(f"   📊 Training samples: {len(X_train)}")
+    print(f"   📊 Testing samples: {len(X_test)}")
+    print(f"   🎯 R² Score: {r2:.4f}")
+    print(f"   📉 Mean Absolute Error: ${abs(y_test - y_pred).mean():.2f}")
+    
+    # Feature importance
+    importance = pd.DataFrame({
+        'feature': X.columns,
+        'importance': model.feature_importances_
+    }).sort_values('importance', ascending=False)
+    
+    print(f"   🔝 Most important feature: {importance.iloc[0]['feature']} ({importance.iloc[0]['importance']:.3f})")
+    print(f"   🎉 Inline demo completed successfully!")
 
 def launch_api_server():
     """Launch API server"""
