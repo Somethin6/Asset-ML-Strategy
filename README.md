@@ -13,11 +13,14 @@
 
   **🚀 Advanced ML | Risk Management | Live Trading | Real-time Dashboard 🚀**
   
+  **💯 100% FREE TO RUN - NO PAID SERVICES REQUIRED 💯**
+  
   [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://python.org)
   [![ML](https://img.shields.io/badge/ML-Ensemble-green.svg)](https://scikit-learn.org)
   [![Trading](https://img.shields.io/badge/Trading-Live-red.svg)](https://github.com)
   [![Dashboard](https://img.shields.io/badge/Dashboard-Streamlit-orange.svg)](https://streamlit.io)
   [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+  [![Free](https://img.shields.io/badge/Cost-100%25%20FREE-brightgreen.svg)](https://github.com)
 
 </div>
 
@@ -25,7 +28,13 @@
 
 ## 🎯 What is MoneyPrinter?
 
-MoneyPrinter is the **ultimate AI-powered trading system** that combines cutting-edge machine learning, advanced risk management, and real-time trading capabilities. It's designed to be a comprehensive, production-ready solution for algorithmic trading.
+MoneyPrinter is the **ultimate AI-powered trading system** that combines cutting-edge machine learning, advanced risk management, and real-time trading capabilities. **Best of all, it's designed to run 100% FREE with no paid services required!**
+
+### 💎 **100% FREE FEATURES**
+- **✅ No API Keys Required**: Uses free Yahoo Finance data by default
+- **✅ No Cloud Costs**: Runs completely locally on your machine
+- **✅ No Subscription Fees**: All core features are free forever
+- **✅ No Hidden Costs**: Optional paid services are clearly marked and not required
 
 ### 🏆 **Exceptional Performance**
 - **💎 645,715% Total Return** (backtested)
@@ -67,6 +76,63 @@ MoneyPrinter is the **ultimate AI-powered trading system** that combines cutting
 - **Environment Profiles**: Development, testing, and production configs
 - **Parameter Validation**: Automatic validation of all settings
 - **Hot Reloading**: Update configurations without restart
+
+---
+
+## 🆓 **FREE TIER SETUP** (Recommended)
+
+### 🚀 **100% Free Installation - Zero Cost!**
+
+```bash
+# Clone the repository
+git clone https://github.com/Somethin6/Asset-ML-Strategy.git
+cd Asset-ML-Strategy
+
+# Install FREE dependencies only (no paid services)
+pip install -r requirements-free.txt
+
+# Generate synthetic data (completely free)
+python generate_synthetic_data.py
+
+# Run backtest with free data
+python moneyprinter.py --mode backtest --data data/market_data.csv
+
+# Launch FREE dashboard
+python moneyprinter.py --mode dashboard
+```
+
+**That's it! Visit `http://localhost:8501` - completely FREE!**
+
+### 💰 **Free Data Sources**
+- **Yahoo Finance** (`yfinance`): FREE real-time and historical data - **NO API KEY NEEDED!**
+- **Synthetic Data**: Realistic market data generated locally - perfect for testing
+- **No quotas, no limits, no paid APIs required**
+
+### 🎯 **Free vs Paid Services**
+
+| Feature | Free Tier ✅ | Paid Services 💳 |
+|---------|-------------|-----------------|
+| **Data Sources** | Yahoo Finance, Synthetic Data | Alpha Vantage, Polygon |
+| **ML Models** | 6 Ensemble Models ✅ | Same ✅ |
+| **Backtesting** | Full Featured ✅ | Same ✅ |
+| **Live Trading** | Full Featured ✅ | Same ✅ |
+| **Dashboard** | Complete UI ✅ | Same ✅ |
+| **Risk Management** | Complete ✅ | Same ✅ |
+| **Notifications** | Console Logging | Email, SMS, Telegram |
+| **Monitoring** | Local Prometheus/Grafana | Sentry, Cloud Services |
+| **Database** | SQLite, Local Files | PostgreSQL, Cloud DB |
+
+### 🐳 **Free Docker Setup**
+
+```bash
+# Use the free-tier docker compose (no paid services)
+docker-compose -f docker-compose-free.yml up -d
+
+# Access services
+# Dashboard: http://localhost:8501
+# Prometheus: http://localhost:9090  
+# Grafana: http://localhost:3001 (admin/free_grafana_123)
+```
 
 ---
 
@@ -407,6 +473,34 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 - Create a feature branch
 - Include tests and documentation
 - Follow code style guidelines
+
+---
+
+## 💳 **Optional Paid Services** (NOT REQUIRED)
+
+While MoneyPrinter runs 100% free, these optional paid services can enhance your experience:
+
+### 📊 **Enhanced Data Sources** (Optional)
+- **Alpha Vantage**: More frequent updates, extended history
+- **Polygon.io**: High-frequency tick data, crypto data
+- **IEX Cloud**: Real-time market data, news sentiment
+
+### 📱 **Premium Notifications** (Optional)
+- **SendGrid**: Professional email notifications
+- **Twilio**: SMS alerts for critical events
+- **Telegram**: Bot notifications (Telegram API is free, but requires setup)
+
+### 🔍 **Advanced Monitoring** (Optional)
+- **Sentry**: Advanced error tracking and performance monitoring
+- **DataDog**: Professional application monitoring
+- **New Relic**: Application performance insights
+
+### ☁️ **Cloud Deployment** (Optional)
+- **AWS/GCP/Azure**: Cloud hosting for 24/7 trading
+- **Heroku**: Easy deployment platform
+- **Railway**: Modern deployment platform
+
+**Remember: All of these are completely optional. The core system works perfectly without any paid services!**
 
 ---
 
