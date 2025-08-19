@@ -96,6 +96,9 @@ class MarketDataFetcher:
         """
         Fetch data using Alpha Vantage API.
         
+        NOTE: Alpha Vantage is a PAID service after free tier limits.
+        For free usage, use yfinance or synthetic data instead.
+        
         Args:
             symbol: Stock symbol
             function: Alpha Vantage function name
@@ -103,11 +106,13 @@ class MarketDataFetcher:
             outputsize: 'compact' or 'full'
         
         Returns:
-            DataFrame with OHLCV data
+            DataFrame with OHLCV data (empty if API key not available)
         """
         if not self.alpha_vantage_key:
-            logger.error("Alpha Vantage API key not provided")
-            return pd.DataFrame()
+            logger.warning("Alpha Vantage API key not provided - this is a PAID service.")
+            logger.warning("For FREE data access, use 'yfinance' or 'synthetic' data source instead.")
+            logger.info("To use Alpha Vantage, set ALPHA_VANTAGE_KEY environment variable.")
+            return pd.DataFrame()  # Return empty DataFrame gracefully
         
         try:
             url = 'https://www.alphavantage.co/query'
@@ -227,7 +232,12 @@ class MarketDataFetcher:
         if source == 'yfinance':
             return self.fetch_yfinance_data(symbol, **kwargs)
         elif source == 'alpha_vantage':
-            return self.fetch_alpha_vantage_data(symbol, **kwargs)
+            # Alpha Vantage is a PAID service - gracefully handle if not available
+            result = self.fetch_alpha_vantage_data(symbol, **kwargs)
+            if result.empty:
+                logger.info(f"Alpha Vantage not available for {symbol}, falling back to yfinance (FREE)")
+                return self.fetch_yfinance_data(symbol, **kwargs)
+            return result
         elif source == 'crypto':
             return self.fetch_crypto_data(symbol, **kwargs)
         else:

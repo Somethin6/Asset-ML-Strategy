@@ -3,8 +3,8 @@ alerts:
   alert_on_large_drawdown: 0.05
   alert_on_model_degradation: 0.1
   email_recipients: []
-  enable_email_alerts: false
-  enable_webhook_alerts: false
+  enable_email_alerts: false  # FREE TIER: Disabled by default, use local logging instead
+  enable_webhook_alerts: false  # FREE TIER: Disabled by default
   webhook_url: null
 data:
   backup_data_source: synthetic
@@ -12,7 +12,7 @@ data:
   data_validation: true
   lookback_period: 365
   min_data_quality_score: 0.8
-  primary_data_source: synthetic
+  primary_data_source: yfinance  # FREE Yahoo Finance API - no API key needed
 environment: testing
 log_level: INFO
 model:

@@ -92,11 +92,11 @@ model:
   # Prediction settings
   prediction_threshold: 0.6
 
-# Data Configuration
+# Data Configuration (FREE TIER)
 data:
-  # Data sources
-  primary_data_source: "yfinance"
-  backup_data_source: "alpha_vantage"
+  # Data sources (FREE)
+  primary_data_source: "yfinance"  # FREE Yahoo Finance API - no API key needed
+  backup_data_source: "synthetic"  # FREE synthetic data generation
     
   # Data collection
   data_update_frequency: 1
@@ -112,13 +112,12 @@ save_results: true
 log_level: "INFO"
 environment: "production"
 
-# Alerting
+# Alerting (FREE TIER ONLY)
 alerts:
-  enable_email_alerts: true
-  enable_webhook_alerts: true
+  enable_email_alerts: false  # FREE TIER: Disabled - use local logging instead
+  enable_webhook_alerts: false  # FREE TIER: Disabled - use local logging instead
   webhook_url: null
-  email_recipients:
-    - "trader@example.com"
+  email_recipients: []  # No email service required
   alert_on_high_profit: 0.1
   alert_on_large_drawdown: 0.05
   alert_on_model_degradation: 0.1

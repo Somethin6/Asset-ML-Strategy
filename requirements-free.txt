@@ -1,18 +1,18 @@
+# FREE TIER REQUIREMENTS - NO PAID SERVICES NEEDED
+# This file contains only free, open-source dependencies for running Asset-ML-Strategy
+
 # Core data science and ML
 pandas>=2.1.0
 numpy>=1.24.0
 scikit-learn>=1.3.0
 xgboost>=2.0.0
 lightgbm>=4.0.0
-tensorflow>=2.13.0
-torch>=2.0.0
-optuna>=3.3.0
 
-# Technical analysis and finance
+# Technical analysis and finance (FREE)
 ta>=0.11.0
-yfinance>=0.2.0
-quantlib>=1.31
-zipline-reloaded>=3.0.0
+yfinance>=0.2.0  # FREE Yahoo Finance API
+# quantlib>=1.31  # Optional - can be heavy to install
+# zipline-reloaded>=3.0.0  # Optional - can be complex to setup
 
 # Visualization
 matplotlib>=3.7.0
@@ -25,11 +25,11 @@ uvicorn[standard]>=0.23.0
 websockets>=11.0.0
 streamlit>=1.25.0
 
-# Database and caching
+# Database and caching (FREE with local SQLite)
 sqlalchemy[asyncio]>=2.0.0
-asyncpg>=0.28.0
-alembic>=1.11.0
-redis[hiredis]>=4.6.0
+# asyncpg>=0.28.0  # Only needed for PostgreSQL
+# alembic>=1.11.0  # Only needed for complex migrations
+# redis[hiredis]>=4.6.0  # Optional - can use in-memory caching
 
 # Authentication and security
 python-jose[cryptography]>=3.3.0
@@ -38,20 +38,16 @@ python-multipart>=0.0.6
 
 # Production and monitoring (FREE TIER ONLY)
 prometheus-fastapi-instrumentator>=6.1.0
-# sentry-sdk[fastapi]>=1.30.0  # REMOVED: Paid error monitoring - use local logging instead
 structlog>=23.1.0
 python-json-logger>=2.0.0
 
 # Communication and alerts (FREE TIER ONLY)
-python-telegram-bot>=20.4.0
-# sendgrid>=6.10.0  # REMOVED: Paid email service - use local SMTP instead
-# twilio>=8.5.0     # REMOVED: Paid SMS service - optional feature
+# python-telegram-bot>=20.4.0  # Optional - only if you want Telegram alerts
 asyncio-mqtt>=0.16.0
 
 # Async and concurrency
 aiohttp>=3.8.0
 aiofiles>=23.1.0
-asyncio-mqtt>=0.16.0
 
 # Data processing and utilities
 pyyaml>=6.0.0
@@ -65,17 +61,11 @@ pydantic>=2.0.0
 pytest>=7.4.0
 pytest-asyncio>=0.21.0
 pytest-cov>=4.1.0
-httpx>=0.24.0
 
 # Excel and reporting
 openpyxl>=3.1.0
 xlsxwriter>=3.1.0
 reportlab>=4.0.0
-
-# Natural language processing
-textblob>=0.17.1
-nltk>=3.8.0
-transformers>=4.30.0
 
 # Signal processing
 PyWavelets>=1.4.0
