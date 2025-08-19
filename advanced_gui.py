@@ -246,29 +246,72 @@ class AdvancedTradingSystem:
                 # Add features
                 train_features = add_features(train_data.copy())
                 
-                # Generate labels for training
+                # Remove rows with NaN values (common after technical indicators)
+                train_features = train_features.dropna()
+                
+                if len(train_features) < 100:
+                    return {
+                        'success': False, 
+                        'error': f'Insufficient data after feature engineering. Only {len(train_features)} valid samples.'
+                    }
+                
+                # Generate realistic labels for training
                 returns = train_features['close'].pct_change()
-                labels = np.where(returns.shift(-1) > config['profit_threshold'], 1,
-                                np.where(returns.shift(-1) < -config['profit_threshold'], 2, 0))
                 
-                # Train models
-                X = train_features.drop(['open', 'high', 'low', 'close', 'volume'], axis=1).fillna(0)
-                y = labels[:-1]  # Remove last label as we shifted
-                X = X[:-1]      # Align with labels
+                # Create labels based on future returns (realistic approach)
+                future_returns = returns.shift(-1)  # Next period return
+                threshold = config['profit_threshold']
                 
-                # Train the ensemble
-                results = strategy.train_models(X, y)
+                # 0 = hold, 1 = buy (expect positive return), 2 = sell (expect negative return)
+                labels = np.where(future_returns > threshold, 1,
+                                np.where(future_returns < -threshold, 2, 0))
+                
+                # Remove the last label since we shifted
+                labels = labels[:-1]
+                train_features = train_features[:-1]
+                
+                # Select features (remove OHLC columns for training)
+                feature_cols = [col for col in train_features.columns 
+                               if col not in ['open', 'high', 'low', 'close', 'volume']]
+                
+                X = train_features[feature_cols].ffill().fillna(0)
+                y = pd.Series(labels, index=X.index)
+                
+                # Train using ensemble predictor directly
+                model_scores = strategy.ensemble_predictor.train_ensemble(X, y)
+                
+                # Calculate feature importance
+                feature_importance = {}
+                for model_name in strategy.ensemble_predictor.feature_importance:
+                    for feature, importance in strategy.ensemble_predictor.feature_importance[model_name].items():
+                        if feature not in feature_importance:
+                            feature_importance[feature] = 0
+                        feature_importance[feature] += importance
+                
+                # Normalize feature importance
+                total_importance = sum(feature_importance.values())
+                if total_importance > 0:
+                    feature_importance = {k: v/total_importance for k, v in feature_importance.items()}
                 
                 # Store trained strategy
                 self.trained_model = strategy
-                self.feature_importance = results.get('feature_importance', {})
+                self.feature_importance = feature_importance
+                
+                # Calculate training accuracy
+                avg_accuracy = sum(model_scores.values()) / len(model_scores) if model_scores else 0
                 
                 return {
                     'success': True,
-                    'training_accuracy': results.get('accuracy', 0),
+                    'training_accuracy': avg_accuracy,
                     'feature_count': X.shape[1],
                     'training_samples': X.shape[0],
-                    'feature_importance': self.feature_importance
+                    'feature_importance': feature_importance,
+                    'model_scores': model_scores,
+                    'label_distribution': {
+                        'buy_signals': int(np.sum(y == 1)),
+                        'sell_signals': int(np.sum(y == 2)), 
+                        'hold_signals': int(np.sum(y == 0))
+                    }
                 }
                 
         except Exception as e:
@@ -284,15 +327,45 @@ class AdvancedTradingSystem:
             with st.spinner("Running backtest on unseen data..."):
                 # Add features to test data
                 test_features = add_features(test_data.copy())
+                test_features = test_features.dropna()
                 
-                # Generate predictions
-                X_test = test_features.drop(['open', 'high', 'low', 'close', 'volume'], axis=1).fillna(0)
-                predictions = self.trained_model.predict(X_test)
+                if len(test_features) < 50:
+                    return {
+                        'success': False, 
+                        'error': f'Insufficient test data after feature engineering. Only {len(test_features)} valid samples.'
+                    }
+                
+                # Select same features used in training
+                feature_cols = [col for col in test_features.columns 
+                               if col not in ['open', 'high', 'low', 'close', 'volume']]
+                
+                X_test = test_features[feature_cols].ffill().fillna(0)
+                
+                # Generate predictions using the trained ensemble
+                predictions, probabilities = self.trained_model.ensemble_predictor.predict_ensemble(X_test)
+                
+                # Use voting to get final predictions
+                if len(predictions) > 0:
+                    pred_matrix = np.stack(predictions, axis=1)
+                    final_predictions = []
+                    
+                    for i in range(len(X_test)):
+                        row_preds = pred_matrix[i]
+                        unique, counts = np.unique(row_preds, return_counts=True)
+                        majority_pred = unique[np.argmax(counts)]
+                        final_predictions.append(majority_pred)
+                    
+                    signals = pd.Series(final_predictions, index=X_test.index)
+                else:
+                    signals = pd.Series(np.zeros(len(X_test)), index=X_test.index)
+                
+                # Align test data with predictions
+                aligned_test = test_data.loc[signals.index]
                 
                 # Create backtester
                 backtester = Backtester(
-                    data=test_data,
-                    signals=pd.Series(predictions, index=test_data.index),
+                    data=aligned_test,
+                    signals=signals,
                     initial_capital=config['initial_capital'],
                     transaction_cost_pct=config['transaction_cost'],
                     slippage_pct=config['slippage']
@@ -330,17 +403,22 @@ class AdvancedTradingSystem:
                 
                 return {
                     'success': True,
-                    'total_return': total_return,
-                    'market_return': market_return,
-                    'excess_return': total_return - market_return,
-                    'sharpe_ratio': sharpe,
-                    'max_drawdown': max_drawdown,
-                    'win_rate': win_rate,
-                    'volatility': volatility,
+                    'total_return': float(total_return),
+                    'market_return': float(market_return),
+                    'excess_return': float(total_return - market_return),
+                    'sharpe_ratio': float(sharpe),
+                    'max_drawdown': float(max_drawdown),
+                    'win_rate': float(win_rate),
+                    'volatility': float(volatility),
                     'total_trades': int(total_trades),
                     'winning_trades': int(winning_trades),
                     'portfolio_data': backtester.portfolio,
-                    'final_value': config['initial_capital'] * backtester.portfolio['cumulative_strategy_returns'].iloc[-1]
+                    'final_value': config['initial_capital'] * backtester.portfolio['cumulative_strategy_returns'].iloc[-1],
+                    'signals_distribution': {
+                        'buy_signals': int(np.sum(signals == 1)),
+                        'sell_signals': int(np.sum(signals == 2)),
+                        'hold_signals': int(np.sum(signals == 0))
+                    }
                 }
                 
         except Exception as e:
