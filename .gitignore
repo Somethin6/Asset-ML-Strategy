@@ -149,11 +149,22 @@ tensorboard_logs/
 moneyprinter.log
 ppo_trading_agent.zip
 
-# Data files (keep structure but ignore large data)
-# Uncomment if you want to ignore all data files
-# data/*.csv
-# data/*.json
-# data/*.parquet
+# Test outputs (exclude test results but keep structure)
+test_outputs/
+
+# Data files (keep sample data but ignore large datasets)
+# Keep sample data files for immediate testing
+!sample_data/
+!sample_data/*.csv
+!sample_data/*.xlsx
+# Ignore large data directories
+data/raw/
+data/processed/
+data/external/
+# Ignore user data files in root
+/*.csv
+/*.xlsx
+/*.xls
 
 # Model files
 *.pkl
