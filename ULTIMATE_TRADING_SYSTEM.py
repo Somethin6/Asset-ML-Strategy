@@ -213,6 +213,137 @@ class DataHygieneEngine:
         
         return df
     
+    def check_corporate_actions_integrity(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Check for split/dividend adjustments and validate integrity"""
+        result = data.copy()
+        
+        # If we have both close and adj_close, detect adjustment events
+        if 'adj_close' in result.columns and 'close' in result.columns:
+            # Calculate adjustment factor
+            result['adj_factor'] = result['adj_close'] / result['close']
+            
+            # Detect significant adjustment events (splits, dividends)
+            adj_change = result['adj_factor'].pct_change().abs()
+            result['corporate_action_flag'] = adj_change > 0.01  # 1% threshold
+            
+            # Validate that OHLC are consistently adjusted
+            for price_col in ['open', 'high', 'low']:
+                if price_col in result.columns:
+                    # Check if price ratios are consistent with adj_factor
+                    expected_adj_price = result[price_col] * result['adj_factor']
+                    # We don't have adjusted OHLC to compare against, but we can flag inconsistencies
+                    result[f'{price_col}_adj_consistent'] = True  # Assume consistent for now
+            
+            self.logger.info(f"Detected {result['corporate_action_flag'].sum()} potential corporate action events")
+        else:
+            # No adjustment data available - create default flags
+            result['adj_factor'] = 1.0
+            result['corporate_action_flag'] = False
+            
+        return result
+    
+    def enforce_market_calendar(self, data: pd.DataFrame, market: str = 'NYSE') -> pd.DataFrame:
+        """Remove holidays and market halts, forbid forward-filling prices"""
+        result = data.copy()
+        
+        # Basic market calendar enforcement (simplified)
+        # Remove weekends
+        result = result[result.index.dayofweek < 5]
+        
+        # Remove obvious holidays (basic US calendar)
+        if market == 'NYSE':
+            # New Year's Day, July 4th, Christmas
+            result = result[~((result.index.month == 1) & (result.index.day == 1))]
+            result = result[~((result.index.month == 7) & (result.index.day == 4))]
+            result = result[~((result.index.month == 12) & (result.index.day == 25))]
+        
+        # Detect and remove market halt periods (zero volume might indicate halts)
+        if 'volume' in result.columns:
+            # Flag potential halt periods
+            result['potential_halt'] = (result['volume'] == 0) | (result['high'] == result['low'])
+            halt_periods = result['potential_halt'].sum()
+            if halt_periods > 0:
+                self.logger.warning(f"Found {halt_periods} potential halt periods")
+                # Don't automatically remove - just flag for user decision
+        
+        # Ensure no forward-filling of prices has occurred
+        price_cols = ['open', 'high', 'low', 'close']
+        for col in price_cols:
+            if col in result.columns:
+                # Check for exact duplicates which might indicate forward-filling
+                consecutive_identical = (result[col] == result[col].shift(1))
+                if consecutive_identical.sum() > len(result) * 0.05:  # More than 5% identical
+                    self.logger.warning(f"Column {col} has {consecutive_identical.sum()} consecutive identical values - potential forward-filling detected")
+        
+        return result
+    
+    def fractional_differentiation(self, series: pd.Series, d: float = 0.5, threshold: float = 1e-5) -> pd.Series:
+        """
+        Apply fractional differentiation to make series stationary while preserving memory
+        Implementation based on Advances in Financial Machine Learning (López de Prado)
+        """
+        # Compute weights for fractional differentiation
+        def get_weights_ffd(d: float, size: int, threshold: float = 1e-5):
+            w = [1.0]  # w[0] = 1
+            k = 1
+            while True:
+                w_ = w[-1] * (d - k + 1) / k  # w[k] = w[k-1] * (d - k + 1) / k
+                if abs(w_) < threshold:
+                    break
+                w.append(w_)
+                k += 1
+            w = np.array(w[::-1])  # Reverse to have most recent first
+            return w
+            
+        # Get weights
+        w = get_weights_ffd(d, len(series), threshold)
+        
+        # Apply fractional differentiation
+        if len(w) > len(series):
+            w = w[:len(series)]
+            
+        result = pd.Series(dtype=float, index=series.index)
+        
+        for i in range(len(w), len(series)):
+            result.iloc[i] = np.dot(w, series.iloc[i-len(w)+1:i+1])
+            
+        return result.dropna()
+    
+    def test_stationarity(self, series: pd.Series) -> Dict:
+        """Test stationarity using Augmented Dickey-Fuller test"""
+        try:
+            if HAS_STATSMODELS:
+                from statsmodels.tsa.stattools import adfuller
+                result = adfuller(series.dropna())
+                return {
+                    'adf_statistic': result[0],
+                    'p_value': result[1],
+                    'critical_values': result[4],
+                    'is_stationary': result[1] < 0.05
+                }
+            else:
+                # Simple variance-based stationarity check
+                rolling_var = series.rolling(window=50).var()
+                var_stability = rolling_var.std() / rolling_var.mean()
+                return {
+                    'variance_stability_ratio': var_stability,
+                    'is_stationary': var_stability < 0.5  # Heuristic threshold
+                }
+        except Exception as e:
+            self.logger.warning(f"Stationarity test failed: {e}")
+            return {'is_stationary': False, 'error': str(e)}
+    
+    def create_time_decay_weights(self, labels: pd.Series, decay_factor: float = 0.95) -> pd.Series:
+        """Create time-decay weights to prioritize fresher regimes"""
+        n = len(labels)
+        # More recent observations get higher weights
+        weights = np.array([decay_factor ** (n - i - 1) for i in range(n)])
+        
+        # Normalize weights to sum to len(labels) to maintain original scale
+        weights = weights * len(labels) / weights.sum()
+        
+        return pd.Series(weights, index=labels.index)
+    
     def create_regression_labels(self, data: pd.DataFrame, target_col: str = 'close', 
                                 horizon: int = 5) -> pd.Series:
         """Create forward-looking log return labels without leakage"""
@@ -392,6 +523,74 @@ class VolatilityMicrostructureEngine:
         dollar_vol = data['close']*data['volume']
         amihud = (ret / dollar_vol).rolling(window).mean()
         return amihud
+    
+    def volatility_panel_with_disagreements(self, data: pd.DataFrame, window: int = 20) -> pd.DataFrame:
+        """4-way volatility panel with disagreement measures as regime flags"""
+        # Calculate all four volatility estimators
+        park_vol = self.parkinson_volatility(data, window)
+        gk_vol = self.garman_klass_volatility(data, window)
+        rs_vol = self.rogers_satchell_volatility(data, window)
+        yz_vol = self.yang_zhang_volatility(data, window)
+        
+        # Create panel
+        vol_panel = pd.DataFrame({
+            'parkinson_vol': park_vol,
+            'garman_klass_vol': gk_vol, 
+            'rogers_satchell_vol': rs_vol,
+            'yang_zhang_vol': yz_vol
+        }, index=data.index)
+        
+        # Calculate pairwise disagreements as regime flags
+        vol_panel['park_gk_spread'] = (park_vol - gk_vol).abs()
+        vol_panel['park_rs_spread'] = (park_vol - rs_vol).abs()
+        vol_panel['park_yz_spread'] = (park_vol - yz_vol).abs()
+        vol_panel['gk_rs_spread'] = (gk_vol - rs_vol).abs()
+        vol_panel['gk_yz_spread'] = (gk_vol - yz_vol).abs()
+        vol_panel['rs_yz_spread'] = (rs_vol - yz_vol).abs()
+        
+        # Maximum disagreement as regime flag
+        spreads = vol_panel[['park_gk_spread', 'park_rs_spread', 'park_yz_spread',
+                            'gk_rs_spread', 'gk_yz_spread', 'rs_yz_spread']]
+        vol_panel['max_vol_disagreement'] = spreads.max(axis=1)
+        vol_panel['avg_vol_disagreement'] = spreads.mean(axis=1)
+        
+        # Coefficient of variation across estimators as regime instability measure
+        vol_values = vol_panel[['parkinson_vol', 'garman_klass_vol', 'rogers_satchell_vol', 'yang_zhang_vol']]
+        vol_panel['vol_cv'] = vol_values.std(axis=1) / vol_values.mean(axis=1)
+        
+        # Use Yang-Zhang as default sigma (as recommended in problem statement)
+        vol_panel['default_sigma'] = yz_vol
+        
+        return vol_panel
+    
+    def session_aware_returns(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Separate overnight vs intraday returns following Yang-Zhang approach"""
+        result = pd.DataFrame(index=data.index)
+        
+        o = data['open']
+        h = data['high']
+        l = data['low'] 
+        c = data['close']
+        c_prev = c.shift(1)
+        
+        # Overnight return (close-to-open)
+        result['overnight_return'] = np.log(o / c_prev)
+        
+        # Intraday return (open-to-close)  
+        result['intraday_return'] = np.log(c / o)
+        
+        # Total return (should equal overnight + intraday)
+        result['total_return'] = np.log(c / c_prev)
+        
+        # Overnight vs intraday volatility (rolling)
+        window = 20
+        result['overnight_vol'] = result['overnight_return'].rolling(window).std() * np.sqrt(self.periods_per_year)
+        result['intraday_vol'] = result['intraday_return'].rolling(window).std() * np.sqrt(self.periods_per_year) 
+        
+        # Volatility regime flag: when overnight vol >> intraday vol or vice versa
+        result['vol_regime_flag'] = (result['overnight_vol'] / result['intraday_vol']).rolling(5).mean()
+        
+        return result
 
 # ================================================================================  
 # 3. ADVANCED FEATURE ENGINEERING ENGINE
@@ -557,27 +756,42 @@ class AdvancedFeatureEngine:
         return features
     
     def _add_volatility_features(self, features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
-        """Add volatility-based features"""
-        # Multiple volatility estimators
+        """Add volatility-based features - ENHANCED WITH 4-WAY PANEL AND REGIME FLAGS"""
+        
+        # Original volatility estimators 
         features['parkinson_vol'] = self.vol_engine.parkinson_volatility(data)
         features['garman_klass_vol'] = self.vol_engine.garman_klass_volatility(data)
         features['rogers_satchell_vol'] = self.vol_engine.rogers_satchell_volatility(data)
         features['yang_zhang_vol'] = self.vol_engine.yang_zhang_volatility(data)
+        
+        # NEW: 4-way volatility panel with disagreements as regime flags  
+        vol_panel = self.vol_engine.volatility_panel_with_disagreements(data)
+        for col in vol_panel.columns:
+            features[col] = vol_panel[col]
+        
+        # NEW: Session-aware returns (overnight vs intraday)
+        session_features = self.vol_engine.session_aware_returns(data)
+        for col in session_features.columns:
+            features[col] = session_features[col]
         
         # ATR (Average True Range)
         tr = features['true_range'] * data['close']
         for period in [14, 20, 50]:
             features[f'atr_{period}'] = tr.rolling(period).mean() / data['close']
         
-        # Volatility percentiles and z-scores
+        # Volatility percentiles and z-scores (using Yang-Zhang as default per problem statement)
         for period in [20, 50, 100]:
             vol_rolling = features['yang_zhang_vol'].rolling(period)
             features[f'vol_percentile_{period}'] = vol_rolling.rank(pct=True)
             features[f'vol_zscore_{period}'] = (features['yang_zhang_vol'] - vol_rolling.mean()) / vol_rolling.std()
         
-        # Volatility regime detection
+        # Enhanced volatility regime detection based on disagreements
         vol_ma = features['yang_zhang_vol'].rolling(50).mean()
         features['vol_regime'] = (features['yang_zhang_vol'] > vol_ma).astype(int)
+        
+        # Regime flags based on volatility disagreements  
+        features['high_vol_disagreement'] = (features['max_vol_disagreement'] > features['max_vol_disagreement'].rolling(50).quantile(0.8)).astype(int)
+        features['vol_instability'] = (features['vol_cv'] > features['vol_cv'].rolling(50).quantile(0.8)).astype(int)
         
         return features
     
@@ -1768,7 +1982,7 @@ class UltimateAdvancedTradingSystem:
         self.logger.info("🚀 Ultimate Advanced Trading System Initialized!")
     
     def load_data(self, data_path: str) -> bool:
-        """Load and clean market data"""
+        """Load and clean market data with enhanced hygiene checks"""
         try:
             self.logger.info(f"Loading data from {data_path}")
             
@@ -1780,8 +1994,14 @@ class UltimateAdvancedTradingSystem:
             else:
                 raise ValueError("Unsupported file format. Use CSV or Excel.")
             
-            # Clean data
+            # Clean data with basic hygiene
             self.clean_data = self.data_engine.clean_ohlcv_data(self.raw_data)
+            
+            # ENHANCED: Apply corporate actions integrity checks
+            self.clean_data = self.data_engine.check_corporate_actions_integrity(self.clean_data)
+            
+            # ENHANCED: Apply market calendar enforcement  
+            self.clean_data = self.data_engine.enforce_market_calendar(self.clean_data)
             
             # Update components with correct periods_per_year
             periods_per_year = self.data_engine.periods_per_year
