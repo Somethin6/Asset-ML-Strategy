@@ -1635,6 +1635,429 @@ class StatisticalValidation:
                 'reliability_curve': None,
                 'calibrated_probabilities': y_prob
             }
+
+# ============================
+# 6A. MULTI-OBJECTIVE STRATEGY OPTIMIZER
+# ============================
+
+class MultiObjectiveStrategyOptimizer:
+    """Multi-objective optimization for strategy selection (DSR + turnover + capacity + drawdown)"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+    
+    def calculate_objective_metrics(self, returns: np.ndarray, positions: np.ndarray, 
+                                  prices: np.ndarray, volumes: np.ndarray,
+                                  periods_per_year: float = 252) -> Dict:
+        """Calculate all objective metrics for multi-objective optimization"""
+        
+        # Deflated Sharpe Ratio (to maximize)
+        sharpe_ratio = np.mean(returns) / (np.std(returns) + 1e-8) * np.sqrt(periods_per_year)
+        
+        # Turnover (to minimize) - average absolute position changes
+        position_changes = np.abs(np.diff(positions, prepend=positions[0]))
+        avg_turnover = np.mean(position_changes)
+        
+        # Maximum Drawdown (to minimize)
+        equity_curve = np.cumprod(1 + returns)
+        peak = np.maximum.accumulate(equity_curve)
+        drawdown = (equity_curve - peak) / peak
+        max_drawdown = np.abs(np.min(drawdown))
+        
+        # Capacity constraint (simplified square-root impact)
+        # Estimate capacity based on volume participation
+        avg_volume = np.mean(volumes)
+        position_sizes = np.abs(positions * prices)
+        avg_participation = np.mean(position_sizes / (avg_volume * prices + 1e-8))
+        capacity_score = self._capacity_penalty(avg_participation)
+        
+        # Additional risk metrics
+        calmar_ratio = sharpe_ratio / (max_drawdown + 1e-8) if max_drawdown > 0 else sharpe_ratio
+        sortino_ratio = np.mean(returns) / (np.std(returns[returns < 0]) + 1e-8) * np.sqrt(periods_per_year)
+        
+        return {
+            'sharpe_ratio': sharpe_ratio,
+            'deflated_sharpe': sharpe_ratio,  # Simplified - would need actual DSR calculation
+            'turnover': avg_turnover,
+            'max_drawdown': max_drawdown,
+            'capacity_score': capacity_score,
+            'calmar_ratio': calmar_ratio,
+            'sortino_ratio': sortino_ratio,
+            'avg_participation_rate': avg_participation
+        }
+    
+    def _capacity_penalty(self, participation_rate: float) -> float:
+        """Calculate capacity penalty based on participation rate"""
+        if participation_rate < 0.05:  # < 5% participation
+            return 0.0  # No penalty
+        elif participation_rate < 0.10:  # 5-10% participation  
+            return 0.1
+        elif participation_rate < 0.20:  # 10-20% participation
+            return 0.5
+        else:  # > 20% participation
+            return 1.0  # Maximum penalty
+    
+    def pareto_frontier_selection(self, strategy_results: List[Dict]) -> List[Dict]:
+        """Select strategies on the Pareto frontier"""
+        
+        if not strategy_results:
+            return []
+        
+        # Extract objectives (minimize turnover, max_drawdown, capacity; maximize DSR)
+        objectives = []
+        for result in strategy_results:
+            metrics = result['metrics']
+            # Convert to minimization problem (negate DSR)
+            obj_vector = [
+                -metrics['deflated_sharpe'],  # Maximize DSR -> minimize negative DSR
+                metrics['turnover'],          # Minimize turnover
+                metrics['max_drawdown'],      # Minimize drawdown
+                metrics['capacity_score']     # Minimize capacity penalty
+            ]
+            objectives.append(obj_vector)
+        
+        objectives = np.array(objectives)
+        
+        # Find Pareto frontier
+        pareto_indices = []
+        n_strategies = len(objectives)
+        
+        for i in range(n_strategies):
+            is_dominated = False
+            for j in range(n_strategies):
+                if i != j:
+                    # Check if strategy j dominates strategy i
+                    if self._dominates(objectives[j], objectives[i]):
+                        is_dominated = True
+                        break
+            
+            if not is_dominated:
+                pareto_indices.append(i)
+        
+        # Return Pareto-efficient strategies
+        pareto_strategies = [strategy_results[i] for i in pareto_indices]
+        
+        # Sort by Sharpe ratio (primary criterion)
+        pareto_strategies.sort(key=lambda x: x['metrics']['deflated_sharpe'], reverse=True)
+        
+        return pareto_strategies
+    
+    def _dominates(self, obj1: np.ndarray, obj2: np.ndarray) -> bool:
+        """Check if obj1 dominates obj2 (all objectives better or equal, at least one strictly better)"""
+        better_or_equal = np.all(obj1 <= obj2)
+        strictly_better = np.any(obj1 < obj2)
+        return better_or_equal and strictly_better
+
+# ============================
+# 6B. STABILITY SELECTION FOR FEATURES
+# ============================
+
+class StabilitySelector:
+    """Stability selection for robust feature selection using subsampled L1 regularization"""
+    
+    def __init__(self, n_bootstrap: int = 100, subsample_frac: float = 0.7, 
+                 alpha_range: Tuple[float, float] = (0.01, 1.0), n_alphas: int = 20):
+        self.n_bootstrap = n_bootstrap
+        self.subsample_frac = subsample_frac
+        self.alpha_range = alpha_range
+        self.n_alphas = n_alphas
+        self.logger = logging.getLogger(__name__)
+        
+    def select_stable_features(self, X: pd.DataFrame, y: pd.Series, 
+                              stability_threshold: float = 0.6, 
+                              fdr_control: bool = True) -> Dict:
+        """Select stable features using stability selection"""
+        
+        n_samples, n_features = X.shape
+        subsample_size = int(n_samples * self.subsample_frac)
+        
+        # Generate alpha values
+        alphas = np.logspace(np.log10(self.alpha_range[0]), 
+                           np.log10(self.alpha_range[1]), self.n_alphas)
+        
+        # Track feature selection frequency
+        selection_counts = np.zeros((n_features, self.n_alphas))
+        feature_names = X.columns
+        
+        for bootstrap_iter in range(self.n_bootstrap):
+            # Subsample data
+            subsample_idx = np.random.choice(n_samples, subsample_size, replace=False)
+            X_sub = X.iloc[subsample_idx]
+            y_sub = y.iloc[subsample_idx]
+            
+            # Fit Lasso for each alpha
+            for alpha_idx, alpha in enumerate(alphas):
+                try:
+                    lasso = Lasso(alpha=alpha, random_state=bootstrap_iter)
+                    lasso.fit(X_sub, y_sub)
+                    
+                    # Track selected features (non-zero coefficients)
+                    selected = np.abs(lasso.coef_) > 1e-6
+                    selection_counts[selected, alpha_idx] += 1
+                    
+                except Exception as e:
+                    self.logger.warning(f"Lasso fitting failed for alpha={alpha}: {e}")
+                    continue
+        
+        # Calculate selection frequencies
+        selection_frequencies = selection_counts / self.n_bootstrap
+        
+        # For each feature, find maximum selection frequency across alphas
+        max_frequencies = np.max(selection_frequencies, axis=1)
+        
+        # Select stable features
+        stable_features = max_frequencies >= stability_threshold
+        stable_feature_names = feature_names[stable_features]
+        
+        # FDR control if requested
+        if fdr_control and len(stable_feature_names) > 0:
+            stable_feature_names = self._fdr_control(stable_feature_names, max_frequencies[stable_features])
+        
+        results = {
+            'stable_features': stable_feature_names.tolist(),
+            'selection_frequencies': dict(zip(feature_names, max_frequencies)),
+            'n_stable_features': len(stable_feature_names),
+            'stability_threshold': stability_threshold
+        }
+        
+        self.logger.info(f"Stability selection completed: {len(stable_feature_names)}/{n_features} features selected")
+        
+        return results
+    
+    def _fdr_control(self, feature_names: pd.Index, frequencies: np.ndarray, 
+                     fdr_level: float = 0.1) -> pd.Index:
+        """Apply FDR control using Benjamini-Hochberg procedure"""
+        
+        # Sort by frequency (descending)
+        sorted_indices = np.argsort(-frequencies)
+        sorted_frequencies = frequencies[sorted_indices]
+        sorted_names = feature_names[sorted_indices]
+        
+        # Benjamini-Hochberg procedure
+        n_features = len(frequencies)
+        rejection_threshold = None
+        
+        for i, freq in enumerate(sorted_frequencies):
+            # Convert frequency to p-value approximation (1 - frequency)
+            p_value = 1 - freq
+            bh_threshold = (i + 1) / n_features * fdr_level
+            
+            if p_value <= bh_threshold:
+                rejection_threshold = i
+            else:
+                break
+        
+        if rejection_threshold is not None:
+            return sorted_names[:rejection_threshold + 1]
+        else:
+            return sorted_names[:0]  # Empty selection
+
+# ============================  
+# 6C. REGIME DETECTION AND CHANGE-POINT ANALYSIS
+# ============================
+
+class RegimeDetectionEngine:
+    """Change-point detection and regime identification using PELT and online methods"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+    
+    def pelt_changepoint_detection(self, series: pd.Series, penalty: float = None, 
+                                  model: str = 'rbf', min_size: int = 10) -> Dict:
+        """PELT (Pruned Exact Linear Time) change-point detection"""
+        
+        # Convert to numpy array
+        data = series.values
+        n = len(data)
+        
+        if penalty is None:
+            # Use BIC penalty as default
+            penalty = np.log(n) 
+            
+        # Simplified PELT implementation (basic version)
+        # In production, would use ruptures library
+        changepoints = self._simple_pelt(data, penalty, min_size)
+        
+        # Create regime labels
+        regime_labels = np.zeros(n, dtype=int)
+        for i, cp in enumerate(changepoints):
+            if i == 0:
+                regime_labels[:cp] = 0
+            else:
+                regime_labels[changepoints[i-1]:cp] = i
+        
+        # Last regime
+        if len(changepoints) > 0:
+            regime_labels[changepoints[-1]:] = len(changepoints)
+        
+        # Calculate regime statistics
+        regimes_info = self._calculate_regime_statistics(data, changepoints)
+        
+        results = {
+            'changepoints': changepoints,
+            'regime_labels': regime_labels,
+            'n_regimes': len(changepoints) + 1,
+            'regimes_info': regimes_info,
+            'series_length': n
+        }
+        
+        self.logger.info(f"PELT detected {len(changepoints)} changepoints, {len(changepoints)+1} regimes")
+        
+        return results
+    
+    def _simple_pelt(self, data: np.ndarray, penalty: float, min_size: int) -> List[int]:
+        """Simplified PELT implementation for variance changes"""
+        n = len(data)
+        
+        # Use rolling window to detect variance changes
+        window_size = max(min_size, n // 20)  # Adaptive window size
+        changepoints = []
+        
+        # Calculate rolling statistics
+        rolling_mean = pd.Series(data).rolling(window_size).mean()
+        rolling_var = pd.Series(data).rolling(window_size).var()
+        
+        # Detect significant changes in variance
+        var_changes = rolling_var.diff().abs()
+        threshold = var_changes.quantile(0.95)  # Top 5% changes
+        
+        # Find changepoints
+        potential_cps = np.where(var_changes > threshold)[0]
+        
+        # Filter changepoints with minimum distance
+        filtered_cps = []
+        for cp in potential_cps:
+            if not filtered_cps or cp - filtered_cps[-1] >= min_size:
+                filtered_cps.append(cp)
+        
+        return filtered_cps
+    
+    def _calculate_regime_statistics(self, data: np.ndarray, changepoints: List[int]) -> List[Dict]:
+        """Calculate statistics for each regime"""
+        regimes_info = []
+        n = len(data)
+        
+        # Add boundaries
+        boundaries = [0] + changepoints + [n]
+        
+        for i in range(len(boundaries) - 1):
+            start_idx = boundaries[i]
+            end_idx = boundaries[i + 1]
+            regime_data = data[start_idx:end_idx]
+            
+            if len(regime_data) > 0:
+                regime_info = {
+                    'regime_id': i,
+                    'start_idx': start_idx,
+                    'end_idx': end_idx,
+                    'length': len(regime_data),
+                    'mean': np.mean(regime_data),
+                    'std': np.std(regime_data),
+                    'min': np.min(regime_data),
+                    'max': np.max(regime_data),
+                    'skewness': stats.skew(regime_data) if len(regime_data) > 2 else 0,
+                    'kurtosis': stats.kurtosis(regime_data) if len(regime_data) > 3 else 0
+                }
+            else:
+                regime_info = {'regime_id': i, 'length': 0}
+            
+            regimes_info.append(regime_info)
+        
+        return regimes_info
+    
+    def online_changepoint_detection(self, series: pd.Series, hazard_rate: float = 0.01, 
+                                   observation_likelihood: str = 'gaussian') -> Dict:
+        """Bayesian Online Changepoint Detection"""
+        
+        data = series.values
+        n = len(data)
+        
+        # Initialize
+        run_length_probs = np.zeros((n + 1, n + 1))
+        run_length_probs[0, 0] = 1.0
+        
+        # Hyperparameters for Gaussian model
+        if observation_likelihood == 'gaussian':
+            mu0 = np.mean(data[:min(10, n)])  # Prior mean
+            k0 = 1.0  # Prior precision
+            alpha0 = 1.0  # Prior shape
+            beta0 = 1.0   # Prior rate
+            
+        changepoint_probs = np.zeros(n)
+        
+        for t in range(1, n + 1):
+            observation = data[t - 1]
+            
+            # Evaluate predictive probabilities
+            pred_probs = self._evaluate_predictive_probability(
+                observation, run_length_probs[t-1, :t], 
+                data[:t-1], mu0, k0, alpha0, beta0
+            )
+            
+            # Calculate changepoint probability  
+            changepoint_probs[t-1] = np.sum(run_length_probs[t-1, :t] * hazard_rate)
+            
+            # Update run length probabilities
+            # Growth probabilities (no changepoint)
+            run_length_probs[t, 1:t+1] = run_length_probs[t-1, :t] * (1 - hazard_rate) * pred_probs
+            
+            # Changepoint probability (reset)
+            run_length_probs[t, 0] = np.sum(run_length_probs[t-1, :t] * hazard_rate * pred_probs)
+            
+            # Normalize
+            total_prob = np.sum(run_length_probs[t, :t+1])
+            if total_prob > 0:
+                run_length_probs[t, :t+1] /= total_prob
+        
+        # Detect changepoints (peaks in probability)
+        threshold = np.percentile(changepoint_probs, 95)
+        detected_changepoints = np.where(changepoint_probs > threshold)[0]
+        
+        results = {
+            'changepoint_probabilities': changepoint_probs,
+            'detected_changepoints': detected_changepoints.tolist(),
+            'run_length_probabilities': run_length_probs,
+            'threshold_used': threshold
+        }
+        
+        self.logger.info(f"Online CPD detected {len(detected_changepoints)} changepoints")
+        
+        return results
+    
+    def _evaluate_predictive_probability(self, observation: float, run_length_dist: np.ndarray,
+                                       data_so_far: np.ndarray, mu0: float, k0: float, 
+                                       alpha0: float, beta0: float) -> np.ndarray:
+        """Evaluate predictive probability for Gaussian model"""
+        pred_probs = np.zeros(len(run_length_dist))
+        
+        for r, prob in enumerate(run_length_dist):
+            if prob > 0 and r > 0:
+                # Get data for this run length
+                recent_data = data_so_far[-r:] if r <= len(data_so_far) else data_so_far
+                
+                if len(recent_data) > 0:
+                    # Update hyperparameters
+                    n_obs = len(recent_data)
+                    sample_mean = np.mean(recent_data)
+                    sample_var = np.var(recent_data, ddof=1) if n_obs > 1 else 1.0
+                    
+                    # Posterior parameters
+                    kn = k0 + n_obs
+                    mun = (k0 * mu0 + n_obs * sample_mean) / kn
+                    alphan = alpha0 + n_obs / 2
+                    betan = beta0 + n_obs * sample_var / 2 + k0 * n_obs * (sample_mean - mu0)**2 / (2 * kn)
+                    
+                    # Predictive probability (Student's t)
+                    pred_probs[r] = stats.t.pdf(observation, 2 * alphan, 
+                                              loc=mun, scale=np.sqrt(betan * (kn + 1) / (alphan * kn)))
+                else:
+                    # Prior predictive
+                    pred_probs[r] = stats.norm.pdf(observation, mu0, 1.0)
+            else:
+                # Prior predictive
+                pred_probs[r] = stats.norm.pdf(observation, mu0, 1.0) if prob > 0 else 0
+        
+        return pred_probs
 # ============================
 # 7. EVENT-DRIVEN BACKTESTING ENGINE
 # ============================
@@ -2429,6 +2852,192 @@ class UltimateAdvancedTradingSystem:
         except Exception as e:
             self.logger.error(f"Error generating report: {e}")
             return {}
+    
+    def apply_stability_selection(self, stability_threshold: float = 0.6, fdr_control: bool = True) -> bool:
+        """Apply stability selection to features for robust feature selection"""
+        try:
+            if self.features is None or self.labels is None:
+                raise ValueError("Features and labels not prepared. Call prepare_features_and_labels() first.")
+            
+            self.logger.info("Applying stability selection for robust feature selection...")
+            
+            # Initialize stability selector
+            stability_selector = StabilitySelector(n_bootstrap=50, subsample_frac=0.7)
+            
+            # Apply stability selection
+            stability_results = stability_selector.select_stable_features(
+                self.features, self.labels, 
+                stability_threshold=stability_threshold, 
+                fdr_control=fdr_control
+            )
+            
+            # Update features to only stable ones
+            stable_features = stability_results['stable_features']
+            if len(stable_features) > 0:
+                self.features = self.features[stable_features]
+                self.stability_results = stability_results
+                self.logger.info(f"Selected {len(stable_features)} stable features from {len(self.feature_engine.generate_all_features(self.clean_data).columns)} original features")
+                return True
+            else:
+                self.logger.warning("No stable features selected. Keeping original features.")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error in stability selection: {e}")
+            return False
+    
+    def detect_regimes(self, target_series: str = 'close', method: str = 'pelt') -> bool:
+        """Detect market regimes using change-point detection"""
+        try:
+            if self.clean_data is None:
+                raise ValueError("No data loaded. Call load_data() first.")
+            
+            self.logger.info(f"Detecting regimes using {method} method...")
+            
+            # Initialize regime detector
+            regime_detector = RegimeDetectionEngine()
+            
+            # Get target series
+            if target_series in self.clean_data.columns:
+                series = self.clean_data[target_series]
+            else:
+                raise ValueError(f"Target series {target_series} not found in data")
+            
+            # Apply regime detection
+            if method == 'pelt':
+                regime_results = regime_detector.pelt_changepoint_detection(series)
+            elif method == 'online':
+                regime_results = regime_detector.online_changepoint_detection(series)
+            else:
+                raise ValueError(f"Unknown regime detection method: {method}")
+            
+            # Store results
+            self.regime_results = regime_results
+            
+            # Add regime labels to data
+            regime_labels = pd.Series(regime_results['regime_labels'], index=series.index, name='regime')
+            self.clean_data = pd.concat([self.clean_data, regime_labels], axis=1)
+            
+            self.logger.info(f"Regime detection completed: {regime_results['n_regimes']} regimes detected")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error in regime detection: {e}")
+            return False
+    
+    def multi_objective_strategy_optimization(self, candidate_strategies: List[Dict] = None) -> Dict:
+        """Run multi-objective optimization to find Pareto-efficient strategies"""
+        try:
+            if self.backtest_results is None:
+                raise ValueError("No backtest results available. Run backtest first.")
+            
+            self.logger.info("Running multi-objective strategy optimization...")
+            
+            # Initialize multi-objective optimizer
+            mo_optimizer = MultiObjectiveStrategyOptimizer()
+            
+            # If no candidate strategies provided, use current strategy
+            if candidate_strategies is None:
+                # Create metrics for current strategy
+                returns = np.array(self.backtest_results['portfolio']['returns'])
+                positions = np.array([state['position'] for state in self.backtest_results['portfolio']['equity_curve']])
+                prices = self.clean_data['close'].values[-len(returns):]
+                volumes = self.clean_data['volume'].values[-len(returns):]
+                
+                metrics = mo_optimizer.calculate_objective_metrics(
+                    returns, positions, prices, volumes, self.data_engine.periods_per_year
+                )
+                
+                candidate_strategies = [{
+                    'strategy_name': 'current_strategy',
+                    'metrics': metrics,
+                    'backtest_results': self.backtest_results
+                }]
+            
+            # Find Pareto frontier
+            pareto_strategies = mo_optimizer.pareto_frontier_selection(candidate_strategies)
+            
+            optimization_results = {
+                'pareto_strategies': pareto_strategies,
+                'n_candidates': len(candidate_strategies),
+                'n_pareto_efficient': len(pareto_strategies),
+                'optimization_criteria': ['deflated_sharpe', 'turnover', 'max_drawdown', 'capacity_score']
+            }
+            
+            self.optimization_results = optimization_results
+            
+            self.logger.info(f"Multi-objective optimization completed: {len(pareto_strategies)}/{len(candidate_strategies)} strategies on Pareto frontier")
+            
+            return optimization_results
+            
+        except Exception as e:
+            self.logger.error(f"Error in multi-objective optimization: {e}")
+            return {}
+    
+    def run_enhanced_pipeline(self, horizon: int = 5, use_stability_selection: bool = True,
+                            detect_regimes: bool = True, multi_objective: bool = True) -> Dict:
+        """Run the complete enhanced pipeline with all Phase 3 improvements"""
+        try:
+            self.logger.info("Running enhanced pipeline with Phase 3 improvements...")
+            
+            results = {'success': False, 'stages_completed': []}
+            
+            # Stage 1: Feature engineering and labeling
+            if self.prepare_features_and_labels(horizon=horizon, label_type='regression'):
+                results['stages_completed'].append('feature_engineering')
+                self.logger.info("✓ Feature engineering completed")
+                
+                # Stage 2: Stability selection (optional)
+                if use_stability_selection:
+                    if self.apply_stability_selection():
+                        results['stages_completed'].append('stability_selection') 
+                        self.logger.info("✓ Stability selection completed")
+                
+                # Stage 3: Regime detection (optional)
+                if detect_regimes:
+                    if self.detect_regimes():
+                        results['stages_completed'].append('regime_detection')
+                        self.logger.info("✓ Regime detection completed")
+                
+                # Stage 4: Model training
+                if self.train_models(task_type='regression', cv_folds=3):
+                    results['stages_completed'].append('model_training')
+                    self.logger.info("✓ Enhanced model training completed")
+                    
+                    # Stage 5: Signal generation and backtesting
+                    signals = self.generate_signals()
+                    if len(signals) > 0 and self.run_backtest(signals):
+                        results['stages_completed'].append('backtesting')
+                        self.logger.info("✓ Backtesting completed")
+                        
+                        # Stage 6: Enhanced validation
+                        validation = self.validate_strategy()
+                        results['validation'] = validation
+                        results['stages_completed'].append('validation')
+                        self.logger.info("✓ Enhanced validation completed")
+                        
+                        # Stage 7: Multi-objective optimization (optional)
+                        if multi_objective:
+                            optimization = self.multi_objective_strategy_optimization()
+                            results['optimization'] = optimization
+                            results['stages_completed'].append('multi_objective_optimization')
+                            self.logger.info("✓ Multi-objective optimization completed")
+                        
+                        # Stage 8: Report generation
+                        report = self.generate_report()
+                        results['report'] = report
+                        results['stages_completed'].append('report_generation')
+                        results['success'] = True
+                        
+                        self.logger.info("🎉 Enhanced pipeline completed successfully!")
+                        
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Error in enhanced pipeline: {e}")
+            results['error'] = str(e)
+            return results
 if HAS_GUI:
     # ================================================================================
     # 11. PROFESSIONAL GUI INTERFACE
