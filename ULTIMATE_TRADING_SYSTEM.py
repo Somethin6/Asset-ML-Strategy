@@ -57,6 +57,7 @@ from sklearn.neural_network import MLPRegressor, MLPClassifier
 from sklearn.metrics import mean_squared_error, r2_score, classification_report, confusion_matrix
 from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.isotonic import IsotonicRegression
 from sklearn.pipeline import Pipeline
 from sklearn.base import BaseEstimator, TransformerMixin, clone
 
@@ -188,11 +189,21 @@ class DataHygieneEngine:
         # Infer frequency and estimate periods per year dynamically (not hardcoded 252)
         freq = pd.infer_freq(df.index)
         if freq is not None:
-            self.periods_per_year = pd.Timedelta(days=365) / pd.to_timedelta(freq.replace('B', 'D'))
+            try:
+                # Convert frequency to timedelta and calculate periods per year
+                freq_str = str(freq).replace('B', 'D')  # Convert business days to calendar days
+                self.periods_per_year = pd.Timedelta(days=365) / pd.to_timedelta(freq_str)
+            except:
+                # Fallback to average delta calculation
+                avg_delta = df.index.to_series().diff().mean()
+                self.periods_per_year = pd.Timedelta(days=365) / avg_delta
         else:
             # Estimate from average time difference
             avg_delta = df.index.to_series().diff().mean()
             self.periods_per_year = pd.Timedelta(days=365) / avg_delta
+        
+        # Ensure periods_per_year is a reasonable number (clamp between 1 and 365*24*60)
+        self.periods_per_year = max(1, min(365*24*60, self.periods_per_year))
         
         self.logger.info(f"Estimated periods per year: {self.periods_per_year:.0f}")
         
@@ -345,9 +356,9 @@ class VolatilityMicrostructureEngine:
         return DataHygieneEngine().calculate_yang_zhang_volatility(data, window)
     
     def corwin_schultz_spread(self, data: pd.DataFrame, window: int = 2) -> pd.Series:
-        """Corwin-Schultz spread estimator from high/low"""
-        h = data['High']
-        l = data['Low']
+        """Corwin-Schultz spread estimator from high/low - CORRECTED VERSION"""
+        h = data['high']
+        l = data['low']
         
         # Calculate components
         gamma = np.log(h.rolling(2).max() / l.rolling(2).min())
@@ -442,36 +453,36 @@ class AdvancedFeatureEngine:
         """Add price-based features"""
         # Basic returns
         for period in [1, 2, 5, 10, 20]:
-            features[f'return_{period}d'] = data['Close'].pct_change(period)
-            features[f'log_return_{period}d'] = np.log(data['Close'] / data['Close'].shift(period))
+            features[f'return_{period}d'] = data['close'].pct_change(period)
+            features[f'log_return_{period}d'] = np.log(data['close'] / data['close'].shift(period))
         
         # Intrabar features  
-        features['body_size'] = np.abs(data['Close'] - data['Open']) / data['Close']
-        features['upper_shadow'] = (data['High'] - np.maximum(data['Open'], data['Close'])) / data['Close']
-        features['lower_shadow'] = (np.minimum(data['Open'], data['Close']) - data['Low']) / data['Close']
-        features['high_low_range'] = (data['High'] - data['Low']) / data['Close']
+        features['body_size'] = np.abs(data['close'] - data['open']) / data['close']
+        features['upper_shadow'] = (data['high'] - np.maximum(data['open'], data['close'])) / data['close']
+        features['lower_shadow'] = (np.minimum(data['open'], data['close']) - data['low']) / data['close']
+        features['high_low_range'] = (data['high'] - data['low']) / data['close']
         
         # True range
-        prev_close = data['Close'].shift(1)
-        tr1 = data['High'] - data['Low']
-        tr2 = np.abs(data['High'] - prev_close)
-        tr3 = np.abs(data['Low'] - prev_close) 
-        features['true_range'] = np.maximum(tr1, np.maximum(tr2, tr3)) / data['Close']
+        prev_close = data['close'].shift(1)
+        tr1 = data['high'] - data['low']
+        tr2 = np.abs(data['high'] - prev_close)
+        tr3 = np.abs(data['low'] - prev_close) 
+        features['true_range'] = np.maximum(tr1, np.maximum(tr2, tr3)) / data['close']
         
         # Price position
-        features['close_position'] = (data['Close'] - data['Low']) / (data['High'] - data['Low'])
+        features['close_position'] = (data['close'] - data['low']) / (data['high'] - data['low'])
         
         # Gaps
-        features['gap'] = (data['Open'] - data['Close'].shift(1)) / data['Close'].shift(1)
+        features['gap'] = (data['open'] - data['close'].shift(1)) / data['close'].shift(1)
         
         return features
     
     def _add_technical_indicators(self, features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
         """Add technical analysis indicators"""
-        close = data['Close']
-        high = data['High']
-        low = data['Low']
-        volume = data['Volume']
+        close = data['close']
+        high = data['high']
+        low = data['low']
+        volume = data['volume']
         
         # Moving averages
         for period in [5, 10, 20, 50, 100, 200]:
@@ -555,9 +566,9 @@ class AdvancedFeatureEngine:
         features['yang_zhang_vol'] = self.vol_engine.yang_zhang_volatility(data)
         
         # ATR (Average True Range)
-        tr = features['true_range'] * data['Close']
+        tr = features['true_range'] * data['close']
         for period in [14, 20, 50]:
-            features[f'atr_{period}'] = tr.rolling(period).mean() / data['Close']
+            features[f'atr_{period}'] = tr.rolling(period).mean() / data['close']
         
         # Volatility percentiles and z-scores
         for period in [20, 50, 100]:
@@ -573,10 +584,10 @@ class AdvancedFeatureEngine:
     
     def _add_volume_features(self, features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
         """Add volume-based features"""
-        volume = data['Volume']
-        close = data['Close']
-        high = data['High']
-        low = data['Low']
+        volume = data['volume']
+        close = data['close']
+        high = data['high']
+        low = data['low']
         
         # Volume moving averages and ratios
         for period in [5, 10, 20, 50]:
@@ -629,8 +640,8 @@ class AdvancedFeatureEngine:
         features['amihud_illiquidity'] = self.vol_engine.amihud_illiquidity(data)
         
         # Price impact measures
-        returns = data['Close'].pct_change()
-        volume = data['Volume']
+        returns = data['close'].pct_change()
+        volume = data['volume']
         
         # Kyle's lambda (price impact)
         for period in [10, 20]:
@@ -669,7 +680,7 @@ class AdvancedFeatureEngine:
     
     def _add_statistical_features(self, features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
         """Add statistical features"""
-        close = data['Close']
+        close = data['close']
         returns = close.pct_change()
         
         # Rolling statistics
@@ -746,7 +757,7 @@ class AdvancedFeatureEngine:
             
         try:
             # Prepare data for tsfresh
-            ts_data = data[['Close']].copy()
+            ts_data = data[['close']].copy()
             ts_data['id'] = 'asset'
             ts_data['time'] = range(len(ts_data))
             
@@ -803,7 +814,7 @@ class AdvancedFeatureEngine:
             return features
             
         try:
-            close_prices = data['Close'].dropna().values
+            close_prices = data['close'].dropna().values
             
             if len(close_prices) < 50:
                 return features
@@ -1024,30 +1035,30 @@ class AdvancedMLEnsemble:
         if valid_mask.sum() > 0:
             self.meta_model.fit(meta_features[valid_mask], y.iloc[valid_mask])
         
-        # Refit all models on full data
-        for name, model in self.models.items():
+        # Refit all models on full data using pipelines
+        for name, pipeline in self.models.items():
             try:
-                model.fit(X_scaled, y)
+                pipeline.fit(X, y)
             except Exception as e:
                 self.logger.warning(f"Error refitting {name}: {e}")
         
-        # Calibrate classifier if needed
+        # Implement proper OOF calibration (fix #8 from problem statement)
         if task_type == 'classification':
             try:
-                # Use simple weighted average for calibration
-                ensemble_pred = self.predict(X, use_meta=False)
-                self.calibrator = CalibratedClassifierCV(
-                    estimator=None, method='isotonic', cv='prefit'
-                )
-                # Create dummy estimator for calibration
-                class DummyEstimator:
-                    def predict_proba(self, X):
-                        return np.column_stack([1 - ensemble_pred, ensemble_pred])
+                # Use OOF predictions for calibration 
+                ensemble_oof = np.average(oof_predictions, weights=list(self.model_weights.values()), axis=1)
                 
-                dummy = DummyEstimator()
-                self.calibrator.fit(X, y)
+                # Fit IsotonicRegression on OOF predictions
+                self.calibrator = IsotonicRegression(out_of_bounds='clip')
+                valid_mask = ~np.isnan(ensemble_oof) & ~np.isnan(y)
+                if valid_mask.sum() > 10:  # Need minimum samples
+                    self.calibrator.fit(ensemble_oof[valid_mask], y[valid_mask])
+                    self.logger.info("OOF calibration completed successfully")
+                else:
+                    self.calibrator = None
+                    self.logger.warning("Insufficient valid samples for calibration")
             except Exception as e:
-                self.logger.warning(f"Calibration failed: {e}")
+                self.logger.warning(f"OOF calibration failed: {e}")
                 self.calibrator = None
         
         self.is_fitted = True
@@ -1094,17 +1105,17 @@ class AdvancedMLEnsemble:
         return np.average(predictions, axis=1, weights=weights)
     
     def predict_proba(self, X):
-        """Return calibrated probabilities for classification"""
+        """Return calibrated probabilities for classification - FIXED CALIBRATION"""
         if self.task_type != 'classification':
             raise ValueError("predict_proba only available for classification")
         
-        raw_pred = self.predict(X)
+        raw_pred = self.predict(X, use_meta=False)
         
         if self.calibrator is not None:
             try:
-                # Use calibrator
-                proba = self.calibrator.predict_proba(X)
-                return proba[:, 1]
+                # Use OOF-trained IsotonicRegression calibrator
+                calibrated_proba = self.calibrator.predict(raw_pred)
+                return np.clip(calibrated_proba, 0, 1)
             except:
                 pass
         
@@ -1411,27 +1422,32 @@ class EventDrivenBacktester:
         signals = signals.reindex(data.index).fillna(0)
         
         for i, (timestamp, row) in enumerate(data.iterrows()):
-            current_price = row['Close']
-            current_volume = row.get('Volume', 1000000)
+            # Fix #6: Signal at t -> execute at t+1 open (prevent look-ahead bias)  
             
-            # Use spread estimate or default
-            if spread_col and spread_col in row:
-                current_spread = row[spread_col]
-            else:
-                current_spread = 0.001  # Default 10 bps spread
-            
-            # Get signal and calculate position size
-            signal = signals.loc[timestamp] if timestamp in signals.index else 0
-            target_position = position_sizer.calculate_position(signal, self.portfolio['equity'])
-            
-            # Execute order
+            # Get signal from PREVIOUS period (decision made with info up to t-1)
             if i > 0:  # Skip first period
+                prev_timestamp = data.index[i-1]
+                signal = signals.loc[prev_timestamp] if prev_timestamp in signals.index else 0
+                target_position = position_sizer.calculate_position(signal, self.portfolio['equity'])
+                
+                # Execute at CURRENT period's open price (next bar after signal)
+                exec_price = row.get('open', row['close'])  # Use open if available, else close
+                current_volume = row.get('volume', 1000000)
+                
+                # Use spread estimate or default
+                if spread_col and spread_col in row:
+                    current_spread = row[spread_col]
+                else:
+                    current_spread = 0.001  # Default 10 bps spread
+                
+                # Execute order with next-bar price
                 order_result = self.execute_order(
-                    timestamp, current_price, target_position,
+                    timestamp, exec_price, target_position,
                     current_volume, current_spread
                 )
             
-            # Update portfolio
+            # Update portfolio using close price for mark-to-market
+            current_price = row['close']
             self.update_portfolio(timestamp, current_price)
         
         # Calculate performance metrics
@@ -1791,11 +1807,11 @@ class UltimateAdvancedTradingSystem:
             self.logger.info("Creating labels...")
             if label_type == 'regression':
                 self.labels = self.data_engine.create_regression_labels(
-                    self.clean_data, target_col='Close', horizon=horizon
+                    self.clean_data, target_col='close', horizon=horizon
                 )
             else:  # classification
                 self.labels = self.data_engine.create_triple_barrier_labels(
-                    self.clean_data, target_col='Close', horizon=horizon
+                    self.clean_data, target_col='close', horizon=horizon
                 )
             
             # Align features and labels
@@ -1922,7 +1938,7 @@ class UltimateAdvancedTradingSystem:
             dsr_result = self.statistical_validator.deflated_sharpe_ratio(returns, n_trials=1)
             
             # White's Reality Check (against buy and hold)
-            benchmark_returns = self.clean_data['Close'].pct_change().fillna(0)
+            benchmark_returns = self.clean_data['close'].pct_change().fillna(0)
             benchmark_returns = benchmark_returns.reindex(
                 pd.DatetimeIndex([state['timestamp'] for state in self.backtest_results['portfolio']['equity_curve']])
             ).fillna(0)
@@ -2352,8 +2368,8 @@ Data Information:
 ================
 📊 Total Records: {len(data)}
 📅 Date Range: {data.index[0]} to {data.index[-1]}
-📈 Price Range: ${data['Close'].min():.2f} to ${data['Close'].max():.2f}
-📊 Average Volume: {data['Volume'].mean():,.0f}
+📈 Price Range: ${data['close'].min():.2f} to ${data['close'].max():.2f}
+📊 Average Volume: {data['volume'].mean():,.0f}
 
 Columns Available:
 {', '.join(data.columns)}
@@ -2382,8 +2398,8 @@ Recent Statistics:
                     f"{row['Open']:.2f}",
                     f"{row['High']:.2f}",
                     f"{row['Low']:.2f}",
-                    f"{row['Close']:.2f}",
-                    f"{row['Volume']:,.0f}"
+                    f"{row['close']:.2f}",
+                    f"{row['volume']:,.0f}"
                 ))
         
         # Add all the other GUI methods here (generate_features, train_models, etc.)
