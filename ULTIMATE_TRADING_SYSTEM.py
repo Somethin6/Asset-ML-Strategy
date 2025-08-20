@@ -2326,110 +2326,430 @@ class EventDrivenBacktester:
 # ============================
 
 class PositionSizer:
-    """Advanced position sizing with Kelly criterion"""
+    """Advanced position sizing with fractional Kelly, volatility targeting, and risk controls"""
     
     def __init__(self, method: str = 'fractional_kelly', max_position: float = 0.2,
-                 kelly_fraction: float = 0.25, lookback: int = 50):
+                 kelly_fraction: float = 0.25, lookback: int = 50, vol_target: float = 0.15,
+                 cvar_limit: float = 0.05, drawdown_throttle: bool = True):
         self.method = method
         self.max_position = max_position
         self.kelly_fraction = kelly_fraction
         self.lookback = lookback
+        self.vol_target = vol_target  # Annual volatility target
+        self.cvar_limit = cvar_limit  # CVaR limit at 95%
+        self.drawdown_throttle = drawdown_throttle
         self.logger = logging.getLogger(__name__)
         
-        # Track win rate and payoff ratio
+        # Track performance and risk metrics
         self.signal_history = []
         self.return_history = []
-    
-    def update_performance(self, signal: float, forward_return: float):
-        """Update performance tracking for Kelly calculation"""
-        if abs(signal) > 0.01:  # Only track when we have a signal
+        self.equity_history = []
+        self.drawdown_throttle_factor = 1.0
+        
+    def update_performance(self, signal: float, forward_return: float, current_equity: float = None):
+        """Enhanced performance tracking with equity curve"""
+        if abs(signal) > 0.01:
             self.signal_history.append(signal)
             self.return_history.append(forward_return)
+            
+            if current_equity is not None:
+                self.equity_history.append(current_equity)
             
             # Keep only recent history
             if len(self.signal_history) > self.lookback:
                 self.signal_history = self.signal_history[-self.lookback:]
                 self.return_history = self.return_history[-self.lookback:]
+                if self.equity_history:
+                    self.equity_history = self.equity_history[-self.lookback:]
     
-    def calculate_kelly_fraction(self) -> float:
-        """Calculate Kelly fraction from historical performance"""
+    def calculate_fractional_kelly(self, calibrated_win_prob: float = None, 
+                                 expected_return: float = None, 
+                                 return_variance: float = None) -> float:
+        """Calculate fractional Kelly using calibrated probabilities"""
+        
+        if calibrated_win_prob is not None and expected_return is not None and return_variance is not None:
+            # Use provided calibrated probabilities (preferred method)
+            if return_variance <= 0:
+                return 0.0
+            
+            # Kelly formula with calibrated probabilities  
+            # f = (p*b - q) / b where p = win prob, q = 1-p, b = odds
+            # For continuous returns: f = μ / σ²
+            kelly_full = expected_return / return_variance
+            
+            # Apply fractional Kelly to reduce risk
+            kelly_fractional = kelly_full * self.kelly_fraction
+            
+        else:
+            # Fallback to historical Kelly calculation
+            kelly_fractional = self._calculate_historical_kelly()
+        
+        # Clip to reasonable range
+        return np.clip(kelly_fractional, -self.max_position, self.max_position)
+    
+    def _calculate_historical_kelly(self) -> float:
+        """Historical Kelly calculation (fallback method)"""
         if len(self.signal_history) < 10:
-            return self.kelly_fraction  # Default
+            return self.kelly_fraction
         
         signals = np.array(self.signal_history)
         returns = np.array(self.return_history)
         
-        # Only consider trades in same direction as signal
-        long_mask = signals > 0
-        short_mask = signals < 0
+        # Calculate overall edge and variance
+        edge = np.mean(returns * np.sign(signals))  # Expected return per unit signal
+        variance = np.var(returns)
         
-        # Calculate win rates and payoffs for long and short
-        if np.sum(long_mask) > 5:
-            long_returns = returns[long_mask]
-            long_wins = np.sum(long_returns > 0) / len(long_returns)
-            long_avg_win = np.mean(long_returns[long_returns > 0]) if np.any(long_returns > 0) else 0
-            long_avg_loss = -np.mean(long_returns[long_returns < 0]) if np.any(long_returns < 0) else 1
-        else:
-            long_wins = long_avg_win = long_avg_loss = 0
-        
-        if np.sum(short_mask) > 5:
-            short_returns = -returns[short_mask]  # Flip for short positions
-            short_wins = np.sum(short_returns > 0) / len(short_returns)
-            short_avg_win = np.mean(short_returns[short_returns > 0]) if np.any(short_returns > 0) else 0
-            short_avg_loss = -np.mean(short_returns[short_returns < 0]) if np.any(short_returns < 0) else 1
-        else:
-            short_wins = short_avg_win = short_avg_loss = 0
-        
-        # Combined Kelly calculation (simplified)
-        if long_avg_loss > 0 and short_avg_loss > 0:
-            long_kelly = (long_wins * long_avg_win - (1 - long_wins) * long_avg_loss) / long_avg_loss
-            short_kelly = (short_wins * short_avg_win - (1 - short_wins) * short_avg_loss) / short_avg_loss
-            kelly_fraction = (long_kelly + short_kelly) / 2
-        else:
-            kelly_fraction = self.kelly_fraction
-        
-        # Clip to reasonable range
-        return np.clip(kelly_fraction, 0, 0.5)
-    
-    def calculate_position(self, signal: float, current_equity: float) -> float:
-        """Calculate position size based on signal and method"""
-        
-        if abs(signal) < 0.01:  # No signal
+        if variance <= 0:
             return 0.0
         
-        if self.method == 'fixed':
-            # Fixed percentage of equity
-            position_value = current_equity * self.max_position * np.sign(signal)
-            
-        elif self.method == 'proportional':
-            # Proportional to signal strength
-            position_value = current_equity * self.max_position * signal
-            
-        elif self.method == 'fractional_kelly':
-            # Fractional Kelly
-            kelly_frac = self.calculate_kelly_fraction()
-            optimal_fraction = kelly_frac * self.kelly_fraction  # Double fraction for safety
-            position_value = current_equity * min(optimal_fraction, self.max_position) * np.sign(signal)
-            
-        elif self.method == 'volatility_scaled':
-            # Scale by signal strength and inverse volatility
-            if len(self.return_history) > 10:
-                recent_vol = np.std(self.return_history[-20:])
-                vol_scalar = 0.02 / max(recent_vol, 0.001)  # Target 2% volatility
-                vol_scalar = np.clip(vol_scalar, 0.1, 3.0)  # Reasonable bounds
+        kelly_full = edge / variance
+        return kelly_full * self.kelly_fraction
+    
+    def calculate_volatility_target_position(self, current_vol: float, signal: float) -> float:
+        """Calculate position size based on volatility targeting"""
+        if current_vol <= 0 or abs(signal) < 0.01:
+            return 0.0
+        
+        # Target position = (target_vol / current_vol) * base_signal
+        vol_scaling = self.vol_target / current_vol
+        target_position = signal * vol_scaling
+        
+        return np.clip(target_position, -self.max_position, self.max_position)
+    
+    def calculate_cvar_limit(self, returns: np.ndarray, confidence_level: float = 0.95) -> float:
+        """Calculate position limit based on Conditional Value at Risk (CVaR)"""
+        if len(returns) < 20:
+            return self.max_position
+        
+        # Calculate CVaR (Expected Shortfall)
+        var_threshold = np.percentile(returns, (1 - confidence_level) * 100)
+        tail_returns = returns[returns <= var_threshold]
+        
+        if len(tail_returns) == 0:
+            return self.max_position
+        
+        cvar = np.mean(tail_returns)
+        
+        # Reduce position if CVaR exceeds limit
+        if abs(cvar) > self.cvar_limit:
+            scaling_factor = self.cvar_limit / abs(cvar)
+            return min(self.max_position * scaling_factor, self.max_position)
+        
+        return self.max_position
+    
+    def update_drawdown_throttle(self):
+        """Update drawdown throttle factor based on current drawdown"""
+        if not self.drawdown_throttle or len(self.equity_history) < 10:
+            self.drawdown_throttle_factor = 1.0
+            return
+        
+        equity_curve = np.array(self.equity_history)
+        peak = np.maximum.accumulate(equity_curve)
+        drawdown = (equity_curve - peak) / peak
+        current_dd = drawdown[-1]
+        
+        # Progressive throttling based on drawdown levels
+        if current_dd > -0.05:  # < 5% DD
+            self.drawdown_throttle_factor = 1.0
+        elif current_dd > -0.10:  # 5-10% DD
+            self.drawdown_throttle_factor = 0.8
+        elif current_dd > -0.15:  # 10-15% DD
+            self.drawdown_throttle_factor = 0.5
+        elif current_dd > -0.20:  # 15-20% DD
+            self.drawdown_throttle_factor = 0.25
+        else:  # > 20% DD
+            self.drawdown_throttle_factor = 0.1
+        
+        if current_dd < -0.05:  # In drawdown
+            self.logger.info(f"Drawdown throttle: {current_dd:.2%} DD, factor: {self.drawdown_throttle_factor:.2f}")
+    
+    def calculate_position(self, signal: float, current_equity: float, 
+                          calibrated_prob: float = None, expected_return: float = None,
+                          current_vol: float = None) -> float:
+        """Enhanced position calculation with multiple risk controls"""
+        
+        if abs(signal) < 0.01:
+            return 0.0
+        
+        # Update drawdown throttle
+        self.update_drawdown_throttle()
+        
+        # Method 1: Fractional Kelly with calibrated probabilities
+        if self.method == 'fractional_kelly':
+            if calibrated_prob is not None and expected_return is not None and current_vol is not None:
+                # Convert probability and return to Kelly inputs
+                return_variance = current_vol ** 2
+                base_position = self.calculate_fractional_kelly(calibrated_prob, expected_return, return_variance)
             else:
-                vol_scalar = 1.0
-            
-            position_value = current_equity * self.max_position * signal * vol_scalar
-            
+                base_position = self._calculate_historical_kelly() * np.sign(signal)
+        
+        # Method 2: Volatility targeting
+        elif self.method == 'vol_target':
+            if current_vol is not None:
+                base_position = self.calculate_volatility_target_position(current_vol, signal)
+            else:
+                base_position = signal * self.kelly_fraction
+        
+        # Method 3: Fixed fractional
         else:
-            raise ValueError(f"Unknown position sizing method: {self.method}")
+            base_position = signal * self.kelly_fraction
         
-        # Ensure we don't exceed maximum position
-        max_value = current_equity * self.max_position
-        position_value = np.clip(position_value, -max_value, max_value)
+        # Apply CVaR limit
+        if len(self.return_history) > 20:
+            cvar_limit = self.calculate_cvar_limit(np.array(self.return_history))
+            base_position = np.clip(base_position, -cvar_limit, cvar_limit)
         
-        return position_value
+        # Apply drawdown throttle
+        final_position = base_position * self.drawdown_throttle_factor
+        
+        # Final clipping
+        final_position = np.clip(final_position, -self.max_position, self.max_position)
+        
+        return final_position
+
+# ============================
+# 7A. HIERARCHICAL RISK PARITY PORTFOLIO CONSTRUCTION  
+# ============================
+
+class HierarchicalRiskParity:
+    """Hierarchical Risk Parity (HRP) for multi-asset portfolio construction"""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+    
+    def calculate_hrp_weights(self, returns: pd.DataFrame) -> pd.Series:
+        """Calculate HRP weights from returns matrix"""
+        try:
+            # Step 1: Calculate correlation matrix and distance matrix
+            corr_matrix = returns.corr()
+            distance_matrix = np.sqrt((1 - corr_matrix) / 2)
+            
+            # Step 2: Hierarchical clustering
+            linkage_matrix = self._hierarchical_clustering(distance_matrix)
+            
+            # Step 3: Quasi-diagonalization
+            sorted_items = self._quasi_diagonalization(linkage_matrix, distance_matrix.index)
+            
+            # Step 4: Recursive bisection
+            hrp_weights = self._recursive_bisection(sorted_items, returns)
+            
+            return pd.Series(hrp_weights, index=returns.columns)
+            
+        except Exception as e:
+            self.logger.error(f"HRP calculation failed: {e}")
+            # Fallback to equal weights
+            n_assets = len(returns.columns)
+            return pd.Series(1/n_assets, index=returns.columns)
+    
+    def _hierarchical_clustering(self, distance_matrix: pd.DataFrame):
+        """Perform hierarchical clustering using single linkage"""
+        from scipy.cluster.hierarchy import linkage
+        from scipy.spatial.distance import squareform
+        
+        # Convert distance matrix to condensed form
+        condensed_dist = squareform(distance_matrix.values)
+        
+        # Perform clustering
+        linkage_matrix = linkage(condensed_dist, method='single')
+        
+        return linkage_matrix
+    
+    def _quasi_diagonalization(self, linkage_matrix, items):
+        """Quasi-diagonalization to sort items by hierarchical clustering"""
+        from scipy.cluster.hierarchy import to_tree
+        
+        # Convert linkage matrix to tree
+        tree = to_tree(linkage_matrix)
+        
+        # Get sorted items
+        sorted_items = self._get_leaf_order(tree, items)
+        
+        return sorted_items
+    
+    def _get_leaf_order(self, tree, items):
+        """Get the order of leaves in the hierarchical tree"""
+        if tree.left is None and tree.right is None:
+            # Leaf node
+            return [items[tree.id]]
+        else:
+            # Internal node - recursively get order from children
+            left_order = self._get_leaf_order(tree.left, items) if tree.left else []
+            right_order = self._get_leaf_order(tree.right, items) if tree.right else []
+            return left_order + right_order
+    
+    def _recursive_bisection(self, sorted_items: List, returns: pd.DataFrame) -> Dict:
+        """Recursive bisection to calculate HRP weights"""
+        
+        # Initialize weights
+        weights = {item: 1.0 for item in sorted_items}
+        
+        # Recursive bisection
+        self._recursive_bisection_step(sorted_items, returns, weights)
+        
+        # Normalize weights
+        total_weight = sum(weights.values())
+        if total_weight > 0:
+            weights = {k: v/total_weight for k, v in weights.items()}
+        
+        return weights
+    
+    def _recursive_bisection_step(self, items: List, returns: pd.DataFrame, weights: Dict):
+        """Single step of recursive bisection"""
+        if len(items) <= 1:
+            return
+        
+        # Split items into two clusters
+        mid_point = len(items) // 2
+        cluster1 = items[:mid_point]
+        cluster2 = items[mid_point:]
+        
+        # Calculate cluster variances
+        if len(cluster1) > 0 and len(cluster2) > 0:
+            var1 = self._calculate_cluster_variance(cluster1, returns)
+            var2 = self._calculate_cluster_variance(cluster2, returns)
+            
+            # Allocate weights inversely proportional to variance
+            total_var = var1 + var2
+            if total_var > 0:
+                weight1 = var2 / total_var  # Inverse weighting
+                weight2 = var1 / total_var
+            else:
+                weight1 = weight2 = 0.5
+            
+            # Update weights
+            for item in cluster1:
+                weights[item] *= weight1
+            for item in cluster2:
+                weights[item] *= weight2
+        
+        # Recursive call on subclusters
+        self._recursive_bisection_step(cluster1, returns, weights)
+        self._recursive_bisection_step(cluster2, returns, weights)
+    
+    def _calculate_cluster_variance(self, items: List, returns: pd.DataFrame) -> float:
+        """Calculate variance of a cluster (equal-weighted)"""
+        if len(items) == 1:
+            return returns[items[0]].var()
+        
+        # Equal-weighted cluster returns
+        cluster_returns = returns[items].mean(axis=1)
+        return cluster_returns.var()
+    
+    def compare_portfolio_methods(self, returns: pd.DataFrame) -> Dict:
+        """Compare HRP with other portfolio construction methods"""
+        results = {}
+        
+        try:
+            # 1. HRP weights
+            hrp_weights = self.calculate_hrp_weights(returns)
+            results['hrp'] = {
+                'weights': hrp_weights.to_dict(),
+                'description': 'Hierarchical Risk Parity'
+            }
+            
+            # 2. Equal Risk Contribution (ERC)
+            erc_weights = self._calculate_erc_weights(returns)
+            results['erc'] = {
+                'weights': erc_weights.to_dict(),
+                'description': 'Equal Risk Contribution'  
+            }
+            
+            # 3. Equal weights
+            n_assets = len(returns.columns)
+            equal_weights = pd.Series(1/n_assets, index=returns.columns)
+            results['equal'] = {
+                'weights': equal_weights.to_dict(),
+                'description': 'Equal Weight'
+            }
+            
+            # 4. Mean-variance (if possible)
+            try:
+                mv_weights = self._calculate_mean_variance_weights(returns)
+                results['mean_variance'] = {
+                    'weights': mv_weights.to_dict(),
+                    'description': 'Mean-Variance Optimization'
+                }
+            except:
+                pass  # Skip if mean-variance fails
+            
+            # Calculate performance metrics for each method
+            for method, data in results.items():
+                weights = pd.Series(data['weights'])
+                portfolio_returns = (returns * weights).sum(axis=1)
+                
+                data['performance'] = {
+                    'annual_return': portfolio_returns.mean() * 252,
+                    'annual_vol': portfolio_returns.std() * np.sqrt(252),
+                    'sharpe_ratio': portfolio_returns.mean() / portfolio_returns.std() * np.sqrt(252),
+                    'max_dd': self._calculate_max_drawdown(portfolio_returns)
+                }
+            
+            self.logger.info(f"Portfolio comparison completed: {len(results)} methods analyzed")
+            
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Portfolio comparison failed: {e}")
+            return {}
+    
+    def _calculate_erc_weights(self, returns: pd.DataFrame) -> pd.Series:
+        """Calculate Equal Risk Contribution weights"""
+        try:
+            cov_matrix = returns.cov().values
+            n_assets = len(returns.columns)
+            
+            # Initial equal weights
+            weights = np.ones(n_assets) / n_assets
+            
+            # Iterative optimization for ERC
+            for _ in range(100):  # Max iterations
+                portfolio_var = np.dot(weights, np.dot(cov_matrix, weights))
+                if portfolio_var <= 0:
+                    break
+                    
+                marginal_contrib = np.dot(cov_matrix, weights)
+                risk_contrib = weights * marginal_contrib / portfolio_var
+                
+                # Update weights to equalize risk contributions
+                target_risk = 1.0 / n_assets
+                adjustment = target_risk / (risk_contrib + 1e-8)
+                weights *= adjustment
+                weights /= weights.sum()  # Normalize
+                
+                # Check convergence
+                if np.abs(risk_contrib - target_risk).max() < 1e-6:
+                    break
+            
+            return pd.Series(weights, index=returns.columns)
+            
+        except Exception as e:
+            self.logger.warning(f"ERC calculation failed: {e}")
+            # Fallback to equal weights
+            n_assets = len(returns.columns)
+            return pd.Series(1/n_assets, index=returns.columns)
+    
+    def _calculate_mean_variance_weights(self, returns: pd.DataFrame) -> pd.Series:
+        """Calculate mean-variance optimal weights"""
+        mean_returns = returns.mean()
+        cov_matrix = returns.cov()
+        
+        # Solve for minimum variance portfolio (no expected return constraint)
+        inv_cov = np.linalg.inv(cov_matrix.values)
+        ones = np.ones(len(mean_returns))
+        
+        weights = np.dot(inv_cov, ones) / np.dot(ones, np.dot(inv_cov, ones))
+        
+        return pd.Series(weights, index=returns.columns)
+    
+    def _calculate_max_drawdown(self, returns: pd.Series) -> float:
+        """Calculate maximum drawdown"""
+        equity_curve = (1 + returns).cumprod()
+        peak = equity_curve.expanding().max()
+        drawdown = (equity_curve - peak) / peak
+        return drawdown.min()
+
+# ============================
+# 8. EVENT-DRIVEN BACKTESTING ENGINE  
 # ============================
 # 9. PROFESSIONAL REPORTING ENGINE
 # ============================
