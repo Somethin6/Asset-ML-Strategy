@@ -1,46 +1,930 @@
 #!/usr/bin/env python3
 """
-ULTIMATE Asset ML Strategy - The Most Advanced Free Local ML Trading Bot
-Integrates universal data loading, 40+ indicators, advanced ML, and comprehensive analysis
+🚀 ULTIMATE ADVANCED ASSET ML STRATEGY 🚀
+The Most Advanced Free Local ML Trading System Ever Created!
 
-FEATURES:
-- Universal CSV/Excel loading with auto-format detection
-- 40+ technical indicators with robust error handling  
-- 4 advanced ML models with dynamic strategy optimization
-- Support & resistance detection + Fibonacci analysis
-- Strategy transition learning with market regime detection
-- Modern GUI with dark theme (when available)
-- 100% free and local operation
+REVOLUTIONARY FEATURES:
+- 143+ Advanced Technical & Statistical Features
+- 16+ ML Models with Intelligent Ensemble Learning  
+- Real-time Signal Generation & Portfolio Optimization
+- Advanced Risk Management & Backtesting Engine
+- Interactive Visualizations & Professional GUI
+- 100% Free & Local Operation
 
-This is the most advanced free ML trading system available!
+From Basic Datasheets to Infinitely Advanced Trading Intelligence!
 """
 
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error, r2_score
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import seaborn as sns
 import os
 from datetime import datetime
 import warnings
+import logging
+import sys
+
 warnings.filterwarnings('ignore')
 
-# Import enhanced modules if available
-try:
-    from enhanced_data_loader import EnhancedDataLoader
-    from advanced_ml_engine import AdvancedMLEngine
-    ENHANCED_MODE = True
-    print("🚀 ENHANCED MODE: Advanced ML modules loaded!")
-except ImportError:
-    ENHANCED_MODE = False
-    print("⚠️  BASIC MODE: Using basic functionality")
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-class AssetMLStrategy:
+# Import our advanced systems
+try:
+    from ultimate_trading_system import UltimateAdvancedTradingSystem
+    from advanced_features import AdvancedFeatureEngine
+    from advanced_ml_ensemble import AdvancedMLEnsemble
+    ADVANCED_MODE = True
+    print("🚀 ADVANCED MODE: Ultimate trading systems loaded!")
+except ImportError as e:
+    ADVANCED_MODE = False
+    print(f"⚠️  BASIC MODE: Advanced systems not available ({e})")
+    # Fallback imports for basic functionality
+    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import mean_squared_error, r2_score
+
+class AdvancedAssetMLStrategy:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("🚀 ULTIMATE ADVANCED ASSET ML STRATEGY - Most Advanced Free Trading System")
+        self.root.geometry("1600x1000")
+        self.root.configure(bg='#1e1e2e')
+        
+        # Initialize advanced systems if available
+        if ADVANCED_MODE:
+            self.advanced_system = UltimateAdvancedTradingSystem()
+            self.feature_engine = AdvancedFeatureEngine()
+            self.ml_ensemble = AdvancedMLEnsemble()
+        
+        # Data storage
+        self.data = None
+        self.features = None
+        self.model_trained = False
+        self.predictions = None
+        self.backtest_results = None
+        
+        # GUI setup
+        self.setup_enhanced_gui()
+        
+        # Show welcome message
+        self.show_welcome_message()
+    
+    def show_welcome_message(self):
+        """Show welcome message with system capabilities"""
+        mode = "ULTIMATE ADVANCED" if ADVANCED_MODE else "BASIC"
+        features = "143+ Advanced Features & 16+ ML Models" if ADVANCED_MODE else "Basic Features & ML Models"
+        
+        welcome_msg = f"""
+🚀 WELCOME TO THE {mode} ASSET ML STRATEGY! 🚀
+
+{features}
+
+CAPABILITIES:
+{'✅ 143+ Technical & Statistical Features' if ADVANCED_MODE else '✅ Basic Technical Features'}
+{'✅ 16+ ML Models with Ensemble Learning' if ADVANCED_MODE else '✅ Random Forest ML Model'}
+{'✅ Advanced Signal Generation' if ADVANCED_MODE else '✅ Basic Signal Generation'}
+{'✅ Comprehensive Backtesting' if ADVANCED_MODE else '✅ Basic Performance Metrics'}
+{'✅ Risk Management Systems' if ADVANCED_MODE else '✅ Simple Risk Analysis'}
+✅ Professional GUI Interface
+✅ 100% Free & Local Operation
+
+Ready to transform your trading with {'cutting-edge' if ADVANCED_MODE else 'reliable'} AI technology!
+        """
+        messagebox.showinfo("Ultimate Advanced Trading System", welcome_msg)
+    
+    def setup_enhanced_gui(self):
+        """Setup the enhanced GUI interface"""
+        # Create main header
+        header_frame = tk.Frame(self.root, bg='#0d1421', height=80)
+        header_frame.pack(fill='x')
+        header_frame.pack_propagate(False)
+        
+        title_text = "🚀 ULTIMATE ADVANCED ASSET ML STRATEGY 🚀" if ADVANCED_MODE else "🔧 ASSET ML STRATEGY"
+        subtitle = "Most Advanced Free Local Trading System" if ADVANCED_MODE else "Free Local Trading Analysis"
+        
+        title_label = tk.Label(
+            header_frame,
+            text=title_text,
+            font=('Arial', 20, 'bold'),
+            bg='#0d1421',
+            fg='#00ff88'
+        )
+        title_label.pack(pady=(10, 0))
+        
+        subtitle_label = tk.Label(
+            header_frame,
+            text=subtitle,
+            font=('Arial', 12),
+            bg='#0d1421',
+            fg='#888888'
+        )
+        subtitle_label.pack()
+        
+        # Create notebook for tabs
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('TNotebook', background='#2d2d2d')
+        style.configure('TNotebook.Tab', padding=[20, 10])
+        
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Setup all tabs
+        self.setup_data_tab()
+        if ADVANCED_MODE:
+            self.setup_advanced_features_tab()
+        self.setup_ml_tab()
+        self.setup_signals_tab()
+        self.setup_backtest_tab()
+        self.setup_visualization_tab()
+        
+        # Setup status bar
+        self.setup_status_bar()
+    
+    def setup_data_tab(self):
+        """Setup data loading tab"""
+        self.data_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.data_frame, text="📊 Data Loading")
+        
+        # File selection
+        file_frame = ttk.LabelFrame(self.data_frame, text="📁 Load Trading Data", padding=15)
+        file_frame.pack(fill='x', padx=10, pady=5)
+        
+        ttk.Button(
+            file_frame,
+            text="🚀 Load Data File (CSV/Excel)",
+            command=self.load_data_file,
+            width=25
+        ).pack(side=tk.LEFT, padx=5)
+        
+        self.file_label = ttk.Label(file_frame, text="No file loaded")
+        self.file_label.pack(side=tk.LEFT, padx=10)
+        
+        # Data preview
+        preview_frame = ttk.LabelFrame(self.data_frame, text="📋 Data Preview", padding=10)
+        preview_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        # Treeview for data display
+        self.data_tree = ttk.Treeview(preview_frame, height=12)
+        data_scroll = ttk.Scrollbar(preview_frame, orient="vertical", command=self.data_tree.yview)
+        self.data_tree.configure(yscrollcommand=data_scroll.set)
+        
+        data_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.data_tree.pack(fill='both', expand=True)
+        
+        # Data information
+        info_frame = ttk.LabelFrame(self.data_frame, text="📊 Data Information", padding=10)
+        info_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.data_info_text = scrolledtext.ScrolledText(info_frame, height=6)
+        self.data_info_text.pack(fill='both', expand=True)
+    
+    def setup_advanced_features_tab(self):
+        """Setup advanced features tab (only if advanced mode)"""
+        self.features_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.features_frame, text="🔬 Advanced Features")
+        
+        # Feature generation controls
+        controls_frame = ttk.LabelFrame(self.features_frame, text="🔬 Feature Engineering", padding=15)
+        controls_frame.pack(fill='x', padx=10, pady=5)
+        
+        ttk.Button(
+            controls_frame,
+            text="🚀 Generate 143+ Features",
+            command=self.generate_advanced_features,
+            width=25
+        ).pack(side=tk.LEFT, padx=5)
+        
+        self.features_label = ttk.Label(controls_frame, text="No features generated")
+        self.features_label.pack(side=tk.LEFT, padx=10)
+        
+        # Feature summary
+        summary_frame = ttk.LabelFrame(self.features_frame, text="📊 Feature Summary", padding=10)
+        summary_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        self.features_text = scrolledtext.ScrolledText(summary_frame, height=20)
+        self.features_text.pack(fill='both', expand=True)
+    
+    def setup_ml_tab(self):
+        """Setup ML training tab"""
+        self.ml_frame = ttk.Frame(self.notebook)
+        tab_text = "🤖 Advanced ML Ensemble" if ADVANCED_MODE else "🤖 ML Analysis"
+        self.notebook.add(self.ml_frame, text=tab_text)
+        
+        # ML controls
+        controls_frame = ttk.LabelFrame(self.ml_frame, text="🤖 ML Training", padding=15)
+        controls_frame.pack(fill='x', padx=10, pady=5)
+        
+        button_text = "🚀 Train 16+ ML Models" if ADVANCED_MODE else "🔧 Train ML Model"
+        ttk.Button(
+            controls_frame,
+            text=button_text,
+            command=self.train_ml_models,
+            width=25
+        ).pack(side=tk.LEFT, padx=5)
+        
+        self.ml_label = ttk.Label(controls_frame, text="Models not trained")
+        self.ml_label.pack(side=tk.LEFT, padx=10)
+        
+        # ML results
+        results_frame = ttk.LabelFrame(self.ml_frame, text="🏆 ML Performance Results", padding=10)
+        results_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        self.ml_results_text = scrolledtext.ScrolledText(results_frame, height=20)
+        self.ml_results_text.pack(fill='both', expand=True)
+    
+    def setup_signals_tab(self):
+        """Setup trading signals tab"""
+        self.signals_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.signals_frame, text="📈 Trading Signals")
+        
+        # Signal generation
+        controls_frame = ttk.LabelFrame(self.signals_frame, text="📈 Signal Generation", padding=15)
+        controls_frame.pack(fill='x', padx=10, pady=5)
+        
+        ttk.Button(
+            controls_frame,
+            text="🎯 Generate Trading Signals",
+            command=self.generate_trading_signals,
+            width=25
+        ).pack(side=tk.LEFT, padx=5)
+        
+        self.signals_label = ttk.Label(controls_frame, text="No signals generated")
+        self.signals_label.pack(side=tk.LEFT, padx=10)
+        
+        # Signals display
+        signals_display_frame = ttk.LabelFrame(self.signals_frame, text="📊 Trading Signals", padding=10)
+        signals_display_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        self.signals_text = scrolledtext.ScrolledText(signals_display_frame, height=20)
+        self.signals_text.pack(fill='both', expand=True)
+    
+    def setup_backtest_tab(self):
+        """Setup backtesting tab"""
+        self.backtest_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.backtest_frame, text="📊 Backtesting")
+        
+        # Backtest controls
+        controls_frame = ttk.LabelFrame(self.backtest_frame, text="📊 Backtesting Engine", padding=15)
+        controls_frame.pack(fill='x', padx=10, pady=5)
+        
+        ttk.Button(
+            controls_frame,
+            text="🚀 Run Advanced Backtest",
+            command=self.run_backtest,
+            width=25
+        ).pack(side=tk.LEFT, padx=5)
+        
+        self.backtest_label = ttk.Label(controls_frame, text="Backtest not run")
+        self.backtest_label.pack(side=tk.LEFT, padx=10)
+        
+        # Backtest results
+        results_frame = ttk.LabelFrame(self.backtest_frame, text="📈 Performance Results", padding=10)
+        results_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        self.backtest_text = scrolledtext.ScrolledText(results_frame, height=20)
+        self.backtest_text.pack(fill='both', expand=True)
+    
+    def setup_visualization_tab(self):
+        """Setup visualization tab"""
+        self.viz_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.viz_frame, text="📊 Visualizations")
+        
+        # Chart controls
+        controls_frame = ttk.LabelFrame(self.viz_frame, text="📊 Advanced Charts", padding=10)
+        controls_frame.pack(fill='x', padx=10, pady=5)
+        
+        chart_buttons = [
+            ("📈 Price Chart", self.plot_price_chart),
+            ("📊 Volume Analysis", self.plot_volume_chart),
+            ("🎯 Predictions", self.plot_predictions_chart),
+            ("📈 Signals", self.plot_signals_chart)
+        ]
+        
+        for i, (text, command) in enumerate(chart_buttons):
+            ttk.Button(controls_frame, text=text, command=command, width=20).grid(
+                row=i//2, column=i%2, padx=5, pady=5, sticky='ew'
+            )
+        
+        for j in range(2):
+            controls_frame.grid_columnconfigure(j, weight=1)
+        
+        # Chart display
+        self.chart_frame = ttk.Frame(self.viz_frame)
+        self.chart_frame.pack(fill='both', expand=True, padx=10, pady=5)
+    
+    def setup_status_bar(self):
+        """Setup status bar"""
+        self.status_frame = tk.Frame(self.root, bg='#0d1421', height=30)
+        self.status_frame.pack(side=tk.BOTTOM, fill=tk.X)
+        self.status_frame.pack_propagate(False)
+        
+        self.status_label = tk.Label(
+            self.status_frame,
+            text="🚀 Ultimate Advanced Trading System Ready - Load data to begin!",
+            bg='#0d1421',
+            fg='#00ff88',
+            font=('Arial', 10),
+            anchor='w',
+            padx=10
+        )
+        self.status_label.pack(fill='both', expand=True, pady=5)
+    
+    def update_status(self, message):
+        """Update status bar message"""
+        self.status_label.config(text=message)
+        self.root.update()
+    
+    def load_data_file(self):
+        """Load data file (CSV or Excel)"""
+        file_path = filedialog.askopenfilename(
+            title="Select Trading Data File",
+            filetypes=[
+                ("All supported", "*.csv *.xlsx *.xls"),
+                ("CSV files", "*.csv"),
+                ("Excel files", "*.xlsx *.xls")
+            ]
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            self.update_status("📊 Loading trading data...")
+            
+            # Load data
+            if file_path.lower().endswith(('.xlsx', '.xls')):
+                self.data = pd.read_excel(file_path)
+            else:
+                self.data = pd.read_csv(file_path)
+            
+            # Validate and clean data
+            self.validate_and_clean_data()
+            
+            # Update GUI
+            self.display_data()
+            self.update_data_info()
+            
+            filename = os.path.basename(file_path)
+            self.file_label.config(text=f"✅ {filename} ({len(self.data)} rows)")
+            
+            self.update_status("✅ Data loaded successfully!")
+            
+            if ADVANCED_MODE:
+                # Initialize advanced system with data
+                self.advanced_system.load_data(self.data)
+            
+            messagebox.showinfo("Success", f"Data loaded successfully!\n{len(self.data)} rows loaded.")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load data:\n{str(e)}")
+            self.update_status("❌ Data loading failed")
+    
+    def validate_and_clean_data(self):
+        """Validate and clean the loaded data"""
+        # Check for required columns
+        required_cols = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+        
+        # Try to find columns with different naming conventions
+        column_mappings = {
+            'Date': ['date', 'DATE', 'Timestamp', 'timestamp'],
+            'Open': ['open', 'OPEN'],
+            'High': ['high', 'HIGH'],
+            'Low': ['low', 'LOW'], 
+            'Close': ['close', 'CLOSE'],
+            'Volume': ['volume', 'VOLUME', 'Vol', 'vol']
+        }
+        
+        for standard_name, alternatives in column_mappings.items():
+            if standard_name not in self.data.columns:
+                for alt in alternatives:
+                    if alt in self.data.columns:
+                        self.data.rename(columns={alt: standard_name}, inplace=True)
+                        break
+        
+        # Add Adj Close if missing
+        if 'Adj Close' not in self.data.columns:
+            self.data['Adj Close'] = self.data['Close'].copy()
+        
+        # Convert Date column
+        if 'Date' in self.data.columns:
+            self.data['Date'] = pd.to_datetime(self.data['Date'])
+            self.data = self.data.sort_values('Date').reset_index(drop=True)
+    
+    def display_data(self):
+        """Display data in treeview"""
+        # Clear existing data
+        for item in self.data_tree.get_children():
+            self.data_tree.delete(item)
+        
+        # Set columns
+        columns = list(self.data.columns)
+        self.data_tree['columns'] = columns
+        self.data_tree['show'] = 'headings'
+        
+        for col in columns:
+            self.data_tree.heading(col, text=col)
+            self.data_tree.column(col, width=100)
+        
+        # Add data (first 50 rows)
+        for _, row in self.data.head(50).iterrows():
+            values = [str(val)[:15] for val in row]
+            self.data_tree.insert('', 'end', values=values)
+    
+    def update_data_info(self):
+        """Update data information display"""
+        if self.data is None:
+            return
+        
+        info_text = f"📊 DATASET INFORMATION:\n"
+        info_text += f"Shape: {self.data.shape[0]:,} rows × {self.data.shape[1]} columns\n"
+        
+        if 'Date' in self.data.columns:
+            info_text += f"Date range: {self.data['Date'].min()} to {self.data['Date'].max()}\n"
+            info_text += f"Trading days: {len(self.data):,}\n"
+        
+        info_text += f"\n💰 PRICE ANALYSIS:\n"
+        if 'Close' in self.data.columns:
+            info_text += f"Current price: ${self.data['Close'].iloc[-1]:.2f}\n"
+            info_text += f"Price range: ${self.data['Close'].min():.2f} - ${self.data['Close'].max():.2f}\n"
+            info_text += f"Average price: ${self.data['Close'].mean():.2f}\n"
+        
+        if 'Volume' in self.data.columns:
+            info_text += f"\n📊 VOLUME ANALYSIS:\n"
+            info_text += f"Average volume: {self.data['Volume'].mean():,.0f}\n"
+            info_text += f"Total volume: {self.data['Volume'].sum():,}\n"
+        
+        info_text += f"\n✅ Ready for {'advanced' if ADVANCED_MODE else 'basic'} analysis!\n"
+        
+        self.data_info_text.delete(1.0, tk.END)
+        self.data_info_text.insert(1.0, info_text)
+    
+    def generate_advanced_features(self):
+        """Generate advanced features (only in advanced mode)"""
+        if not ADVANCED_MODE:
+            messagebox.showwarning("Feature Not Available", "Advanced features require advanced mode")
+            return
+        
+        if self.data is None:
+            messagebox.showerror("Error", "Please load data first!")
+            return
+        
+        try:
+            self.update_status("🔬 Generating 143+ advanced features...")
+            
+            # Generate features using advanced system
+            success = self.advanced_system.engineer_features()
+            
+            if success:
+                self.features = self.advanced_system.features
+                
+                # Generate feature summary
+                feature_summary = self.feature_engine.create_feature_summary(self.features)
+                
+                # Update GUI
+                self.features_label.config(text=f"✅ Generated {feature_summary['total_features']} features")
+                
+                # Display feature information
+                feature_text = f"🔬 ADVANCED FEATURE ENGINEERING RESULTS\n"
+                feature_text += f"{'='*50}\n\n"
+                feature_text += f"📊 FEATURE SUMMARY:\n"
+                feature_text += f"Total Features: {feature_summary['total_features']}\n"
+                feature_text += f"Categories: {len(feature_summary['categories'])}\n\n"
+                
+                feature_text += f"📋 FEATURE CATEGORIES:\n"
+                for category, count in feature_summary['categories'].items():
+                    feature_text += f"  • {category}: {count} features\n"
+                
+                feature_text += f"\n🎯 TOP FEATURES BY CATEGORY:\n"
+                for category, features_list in feature_summary['feature_list'].items():
+                    if features_list:
+                        top_features = features_list[:3]
+                        feature_text += f"  {category}: {', '.join(top_features)}{'...' if len(features_list) > 3 else ''}\n"
+                
+                feature_text += f"\n✅ Advanced features ready for ML training! 🚀\n"
+                
+                self.features_text.delete(1.0, tk.END)
+                self.features_text.insert(1.0, feature_text)
+                
+                self.update_status("✅ Advanced features generated successfully!")
+                messagebox.showinfo("Success", f"Generated {feature_summary['total_features']} advanced features!")
+                
+            else:
+                raise Exception("Feature engineering failed")
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Feature generation failed:\n{str(e)}")
+            self.update_status("❌ Feature generation failed")
+    
+    def train_ml_models(self):
+        """Train ML models"""
+        if self.data is None:
+            messagebox.showerror("Error", "Please load data first!")
+            return
+        
+        try:
+            if ADVANCED_MODE:
+                self.update_status("🤖 Training 16+ advanced ML models...")
+                
+                # Train using advanced system
+                success = self.advanced_system.train_models()
+                
+                if success:
+                    self.model_trained = True
+                    
+                    # Get model report
+                    ml_report = self.advanced_system.ml_ensemble.generate_model_report()
+                    
+                    self.ml_results_text.delete(1.0, tk.END)
+                    self.ml_results_text.insert(1.0, ml_report)
+                    
+                    self.ml_label.config(text="✅ 16+ models trained successfully!")
+                    self.update_status("✅ Advanced ML ensemble trained!")
+                    
+                    messagebox.showinfo("Success", "Advanced ML ensemble trained successfully!")
+                else:
+                    raise Exception("Advanced ML training failed")
+                    
+            else:
+                # Basic ML training fallback
+                self.train_basic_ml()
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"ML training failed:\n{str(e)}")
+            self.update_status("❌ ML training failed")
+    
+    def train_basic_ml(self):
+        """Train basic ML model (fallback)"""
+        self.update_status("🔧 Training basic ML model...")
+        
+        # Prepare basic features
+        feature_cols = ['Open', 'High', 'Low', 'Adj Close', 'Volume']
+        feature_cols = [col for col in feature_cols if col in self.data.columns]
+        
+        X = self.data[feature_cols].copy()
+        y = self.data['Close'].copy()
+        
+        # Add simple features
+        X['SMA_10'] = self.data['Close'].rolling(10).mean()
+        X['SMA_20'] = self.data['Close'].rolling(20).mean()
+        X['Volatility'] = self.data['Close'].rolling(10).std()
+        
+        # Clean data
+        mask = ~(X.isnull().any(axis=1) | y.isnull())
+        X = X[mask]
+        y = y[mask]
+        
+        # Train model
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        model = RandomForestRegressor(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+        
+        # Evaluate
+        y_pred = model.predict(X_test)
+        r2 = r2_score(y_test, y_pred)
+        mse = mean_squared_error(y_test, y_pred)
+        
+        self.model_trained = True
+        
+        # Display results
+        results_text = f"🔧 BASIC ML MODEL RESULTS\n"
+        results_text += f"{'='*40}\n\n"
+        results_text += f"Model: Random Forest\n"
+        results_text += f"Features: {len(X.columns)}\n"
+        results_text += f"Training samples: {len(X_train)}\n"
+        results_text += f"Test samples: {len(X_test)}\n\n"
+        results_text += f"Performance:\n"
+        results_text += f"R² Score: {r2:.4f}\n"
+        results_text += f"MSE: {mse:.4f}\n\n"
+        results_text += f"✅ Basic model trained successfully!\n"
+        
+        self.ml_results_text.delete(1.0, tk.END)
+        self.ml_results_text.insert(1.0, results_text)
+        
+        self.ml_label.config(text="✅ Basic model trained!")
+        self.update_status("✅ Basic ML model trained!")
+    
+    def generate_trading_signals(self):
+        """Generate trading signals"""
+        if not self.model_trained:
+            messagebox.showerror("Error", "Please train models first!")
+            return
+        
+        try:
+            if ADVANCED_MODE:
+                self.update_status("🎯 Generating advanced trading signals...")
+                
+                # Generate predictions and signals
+                pred_success = self.advanced_system.generate_predictions()
+                signal_success = self.advanced_system.generate_trading_signals()
+                
+                if pred_success and signal_success:
+                    self.predictions = self.advanced_system.predictions
+                    
+                    # Display signals
+                    signals_text = f"🎯 ADVANCED TRADING SIGNALS\n"
+                    signals_text += f"{'='*40}\n\n"
+                    
+                    # Signal summary
+                    signal_counts = self.predictions['Signal'].value_counts()
+                    signals_text += f"📊 SIGNAL SUMMARY:\n"
+                    for signal, count in signal_counts.items():
+                        signals_text += f"  • {signal}: {count} signals\n"
+                    
+                    # Recent signals
+                    signals_text += f"\n📈 RECENT SIGNALS (Last 10):\n"
+                    recent_signals = self.predictions.tail(10)
+                    
+                    for _, row in recent_signals.iterrows():
+                        date_str = row['Date'].strftime('%Y-%m-%d') if pd.notna(row['Date']) else 'N/A'
+                        signals_text += f"{date_str}: {row['Signal']} (Confidence: {row['Confidence']:.2f})\n"
+                    
+                    # Latest signal
+                    latest_signal = self.predictions.iloc[-1]
+                    signals_text += f"\n🎯 LATEST SIGNAL:\n"
+                    signals_text += f"Signal: {latest_signal['Signal']}\n"
+                    signals_text += f"Confidence: {latest_signal['Confidence']:.2f}\n"
+                    signals_text += f"Position Size: {latest_signal['Position_Size']:.2f}\n"
+                    
+                    signals_text += f"\n✅ Advanced trading signals ready! 🚀\n"
+                    
+                    self.signals_text.delete(1.0, tk.END)
+                    self.signals_text.insert(1.0, signals_text)
+                    
+                    self.signals_label.config(text=f"✅ Generated {len(self.predictions)} signals")
+                    self.update_status("✅ Trading signals generated!")
+                    
+                    messagebox.showinfo("Success", "Advanced trading signals generated successfully!")
+                else:
+                    raise Exception("Signal generation failed")
+            else:
+                # Basic signal generation
+                self.generate_basic_signals()
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Signal generation failed:\n{str(e)}")
+            self.update_status("❌ Signal generation failed")
+    
+    def generate_basic_signals(self):
+        """Generate basic trading signals"""
+        signals_text = f"🔧 BASIC TRADING SIGNALS\n"
+        signals_text += f"{'='*30}\n\n"
+        signals_text += f"Simple moving average crossover strategy:\n"
+        
+        # Calculate simple signals
+        self.data['SMA_10'] = self.data['Close'].rolling(10).mean()
+        self.data['SMA_20'] = self.data['Close'].rolling(20).mean()
+        
+        conditions = [
+            self.data['SMA_10'] > self.data['SMA_20'],
+            self.data['SMA_10'] < self.data['SMA_20']
+        ]
+        choices = ['BUY', 'SELL']
+        
+        self.data['Signal'] = np.select(conditions, choices, default='HOLD')
+        
+        signal_counts = self.data['Signal'].value_counts()
+        for signal, count in signal_counts.items():
+            signals_text += f"  • {signal}: {count} signals\n"
+        
+        signals_text += f"\nLatest Signal: {self.data['Signal'].iloc[-1]}\n"
+        signals_text += f"\n✅ Basic signals generated!\n"
+        
+        self.signals_text.delete(1.0, tk.END)
+        self.signals_text.insert(1.0, signals_text)
+        
+        self.signals_label.config(text="✅ Basic signals generated")
+        self.update_status("✅ Basic signals generated!")
+    
+    def run_backtest(self):
+        """Run backtesting analysis"""
+        if self.predictions is None and not hasattr(self.data, 'Signal'):
+            messagebox.showerror("Error", "Please generate signals first!")
+            return
+        
+        try:
+            if ADVANCED_MODE and self.predictions is not None:
+                self.update_status("📊 Running advanced backtest...")
+                
+                # Run advanced backtest
+                self.backtest_results = self.advanced_system.run_backtest()
+                
+                if self.backtest_results:
+                    # Display backtest results
+                    backtest_text = f"📊 ADVANCED BACKTEST RESULTS\n"
+                    backtest_text += f"{'='*40}\n\n"
+                    backtest_text += f"💰 PERFORMANCE METRICS:\n"
+                    backtest_text += f"Total Return: {self.backtest_results['total_return']:.2%}\n"
+                    backtest_text += f"Final Capital: ${self.backtest_results['final_capital']:,.2f}\n"
+                    backtest_text += f"Total Trades: {self.backtest_results['total_trades']}\n"
+                    backtest_text += f"Win Rate: {self.backtest_results['win_rate']:.1%}\n"
+                    backtest_text += f"Average Win: ${self.backtest_results['avg_win']:.2f}\n"
+                    backtest_text += f"Average Loss: ${self.backtest_results['avg_loss']:.2f}\n"
+                    backtest_text += f"Max Drawdown: {self.backtest_results['max_drawdown']:.2%}\n"
+                    backtest_text += f"Sharpe Ratio: {self.backtest_results['sharpe_ratio']:.2f}\n\n"
+                    
+                    # Recent trades
+                    if self.backtest_results['trades']:
+                        backtest_text += f"📈 RECENT TRADES (Last 5):\n"
+                        recent_trades = self.backtest_results['trades'][-5:]
+                        for trade in recent_trades:
+                            backtest_text += f"{trade['Date'].strftime('%Y-%m-%d')}: {trade['Type']} - ${trade['Return']:.2f}\n"
+                    
+                    backtest_text += f"\n✅ Advanced backtest completed! 🚀\n"
+                    
+                    self.backtest_text.delete(1.0, tk.END)
+                    self.backtest_text.insert(1.0, backtest_text)
+                    
+                    self.backtest_label.config(text=f"✅ Backtest: {self.backtest_results['total_return']:.1%} return")
+                    self.update_status("✅ Advanced backtest completed!")
+                    
+                    messagebox.showinfo("Backtest Complete", 
+                                      f"Backtest completed!\nTotal Return: {self.backtest_results['total_return']:.2%}")
+                else:
+                    raise Exception("Advanced backtest failed")
+            else:
+                # Basic backtest
+                self.run_basic_backtest()
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Backtest failed:\n{str(e)}")
+            self.update_status("❌ Backtest failed")
+    
+    def run_basic_backtest(self):
+        """Run basic backtest"""
+        backtest_text = f"🔧 BASIC BACKTEST RESULTS\n"
+        backtest_text += f"{'='*30}\n\n"
+        
+        # Simple backtest logic
+        if 'Signal' in self.data.columns:
+            signal_changes = self.data['Signal'].ne(self.data['Signal'].shift()).sum()
+            buy_signals = (self.data['Signal'] == 'BUY').sum()
+            sell_signals = (self.data['Signal'] == 'SELL').sum()
+            
+            backtest_text += f"Signal Changes: {signal_changes}\n"
+            backtest_text += f"Buy Signals: {buy_signals}\n"
+            backtest_text += f"Sell Signals: {sell_signals}\n"
+            
+            # Simple return calculation
+            returns = self.data['Close'].pct_change()
+            total_return = (1 + returns).prod() - 1
+            
+            backtest_text += f"Total Return: {total_return:.2%}\n"
+        
+        backtest_text += f"\n✅ Basic backtest completed!\n"
+        
+        self.backtest_text.delete(1.0, tk.END)
+        self.backtest_text.insert(1.0, backtest_text)
+        
+        self.backtest_label.config(text="✅ Basic backtest completed")
+        self.update_status("✅ Basic backtest completed!")
+    
+    def plot_price_chart(self):
+        """Plot price chart"""
+        if self.data is None:
+            messagebox.showerror("Error", "Please load data first!")
+            return
+        
+        self.clear_chart_frame()
+        
+        fig, ax = plt.subplots(figsize=(12, 6))
+        fig.patch.set_facecolor('#2d2d2d')
+        ax.set_facecolor('#2d2d2d')
+        
+        # Plot price data
+        if 'Date' in self.data.columns:
+            ax.plot(self.data['Date'], self.data['Close'], label='Close Price', color='#00ff88', linewidth=2)
+            ax.plot(self.data['Date'], self.data['Open'], label='Open Price', alpha=0.7, color='#888888')
+        else:
+            ax.plot(self.data['Close'], label='Close Price', color='#00ff88', linewidth=2)
+        
+        ax.set_title('Price Chart', color='white', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Date' if 'Date' in self.data.columns else 'Index', color='white')
+        ax.set_ylabel('Price', color='white')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        ax.tick_params(colors='white')
+        
+        canvas = FigureCanvasTkAgg(fig, self.chart_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+    
+    def plot_volume_chart(self):
+        """Plot volume chart"""
+        if self.data is None or 'Volume' not in self.data.columns:
+            messagebox.showerror("Error", "Volume data not available!")
+            return
+        
+        self.clear_chart_frame()
+        
+        fig, ax = plt.subplots(figsize=(12, 6))
+        fig.patch.set_facecolor('#2d2d2d')
+        ax.set_facecolor('#2d2d2d')
+        
+        if 'Date' in self.data.columns:
+            ax.bar(self.data['Date'], self.data['Volume'], alpha=0.7, color='#ff6b35')
+        else:
+            ax.bar(range(len(self.data)), self.data['Volume'], alpha=0.7, color='#ff6b35')
+        
+        ax.set_title('Volume Analysis', color='white', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Date' if 'Date' in self.data.columns else 'Index', color='white')
+        ax.set_ylabel('Volume', color='white')
+        ax.grid(True, alpha=0.3)
+        ax.tick_params(colors='white')
+        
+        canvas = FigureCanvasTkAgg(fig, self.chart_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+    
+    def plot_predictions_chart(self):
+        """Plot predictions chart"""
+        if self.predictions is None:
+            messagebox.showerror("Error", "No predictions available!")
+            return
+        
+        self.clear_chart_frame()
+        
+        fig, ax = plt.subplots(figsize=(12, 6))
+        fig.patch.set_facecolor('#2d2d2d')
+        ax.set_facecolor('#2d2d2d')
+        
+        ax.plot(self.predictions['Actual'], label='Actual', color='#00ff88', linewidth=2)
+        ax.plot(self.predictions['Predicted'], label='Predicted', color='#ff6b35', linewidth=2, alpha=0.8)
+        
+        ax.set_title('Predictions vs Actual', color='white', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Time', color='white')
+        ax.set_ylabel('Price', color='white')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        ax.tick_params(colors='white')
+        
+        canvas = FigureCanvasTkAgg(fig, self.chart_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+    
+    def plot_signals_chart(self):
+        """Plot signals chart"""
+        if self.predictions is None and 'Signal' not in self.data.columns:
+            messagebox.showerror("Error", "No signals available!")
+            return
+        
+        self.clear_chart_frame()
+        
+        fig, ax = plt.subplots(figsize=(12, 6))
+        fig.patch.set_facecolor('#2d2d2d')
+        ax.set_facecolor('#2d2d2d')
+        
+        if self.predictions is not None:
+            # Plot price with signals
+            ax.plot(self.predictions['Actual'], label='Price', color='white', linewidth=2)
+            
+            # Mark buy/sell signals
+            buy_signals = self.predictions[self.predictions['Signal'] == 'BUY']
+            sell_signals = self.predictions[self.predictions['Signal'] == 'SELL']
+            
+            if not buy_signals.empty:
+                ax.scatter(buy_signals.index, buy_signals['Actual'], 
+                          color='green', marker='^', s=100, label='BUY', alpha=0.8)
+            
+            if not sell_signals.empty:
+                ax.scatter(sell_signals.index, sell_signals['Actual'], 
+                          color='red', marker='v', s=100, label='SELL', alpha=0.8)
+        
+        ax.set_title('Trading Signals', color='white', fontsize=14, fontweight='bold')
+        ax.set_xlabel('Time', color='white')
+        ax.set_ylabel('Price', color='white')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        ax.tick_params(colors='white')
+        
+        canvas = FigureCanvasTkAgg(fig, self.chart_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
+    
+    def clear_chart_frame(self):
+        """Clear the chart frame"""
+        for widget in self.chart_frame.winfo_children():
+            widget.destroy()
+
+
+def main():
+    """Main application entry point"""
+    try:
+        root = tk.Tk()
+        app = AdvancedAssetMLStrategy(root)
+        root.mainloop()
+    except Exception as e:
+        print(f"Error starting application: {e}")
+        if "tkinter" in str(e).lower():
+            print("GUI not available in headless environment.")
+
+if __name__ == "__main__":
+    main()
     def __init__(self, root):
         self.root = root
         if ENHANCED_MODE:
