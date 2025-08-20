@@ -1,34 +1,41 @@
-# 💰 MoneyPrinter - The Ultimate AI-Powered Trading System
+# � Ultimate Advanced ML Trading System (Slimmed Version)
 
-<div align="center">
-  
-  ```
-  ███╗   ███╗ ██████╗ ███╗   ██╗███████╗██╗   ██╗██████╗ ██████╗ ██╗███╗   ██╗████████╗███████╗██████╗ 
-  ████╗ ████║██╔═══██╗████╗  ██║██╔════╝╚██╗ ██╔╝██╔══██╗██╔══██╗██║████╗  ██║╚══██╔══╝██╔════╝██╔══██╗
-  ██╔████╔██║██║   ██║██╔██╗ ██║█████╗   ╚████╔╝ ██████╔╝██████╔╝██║██╔██╗ ██║   ██║   █████╗  ██████╔╝
-  ██║╚██╔╝██║██║   ██║██║╚██╗██║██╔══╝    ╚██╔╝  ██╔═══╝ ██╔══██╗██║██║╚██╗██║   ██║   ██╔══╝  ██╔══██╗
-  ██║ ╚═╝ ██║╚██████╔╝██║ ╚████║███████╗   ██║   ██║     ██║  ██║██║██║ ╚████║   ██║   ███████╗██║  ██║
-  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝   ╚═╝   ╚═╝     ╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝   ╚═╝   ╚══════╝╚═╝  ╚═╝
-  ```
+This repository has been reduced to the **minimum core required** for the Ultimate Advanced ML Trading System GUI:
 
-  **🚀 Advanced ML | Risk Management | Live Trading | Real-time Dashboard 🚀**
-  
-  **💯 100% FREE TO RUN - NO PAID SERVICES REQUIRED 💯**
-  
-  [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://python.org)
-  [![ML](https://img.shields.io/badge/ML-Ensemble-green.svg)](https://scikit-learn.org)
-  [![Trading](https://img.shields.io/badge/Trading-Live-red.svg)](https://github.com)
-  [![Dashboard](https://img.shields.io/badge/Dashboard-Streamlit-orange.svg)](https://streamlit.io)
-  [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-  [![Free](https://img.shields.io/badge/Cost-100%25%20FREE-brightgreen.svg)](https://github.com)
+Included core components:
+1. `ultimate_gui.py` – Tkinter desktop GUI (entry point)
+2. `ultimate_trading_system.py` – Orchestrates pipeline (data → features → models → signals → backtest)
+3. `advanced_features.py` – 100+ technical / statistical / microstructure features
+4. `advanced_ml_ensemble.py` – 15+ model advanced ensemble (XGBoost / LightGBM optional)
 
-</div>
+Everything else (APIs, dashboards, demos, docs, generators, RL, web frontends, tests, deployment assets) has been removed per request.
+
+## ✅ Quick Start
+```bash
+python -m venv .venv
+source .venv/Scripts/activate  # Windows PowerShell: .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python ultimate_gui.py
+```
+Then load your OHLCV file (must contain columns: Date, Open, High, Low, Close, Volume) and run the full pipeline inside the GUI.
+
+## 📦 Minimal Dependencies
+See `requirements.txt` (pandas, numpy, scipy, scikit-learn, matplotlib, seaborn, joblib, optional xgboost/lightgbm if installed).
+
+If you don’t need XGBoost or LightGBM, you can safely uninstall them to slim further.
+
+## 🔧 Optional Adjustments
+- To change ensemble behavior: edit `advanced_ml_ensemble.py` (weights / model set)
+- To change feature set or thresholds: edit `advanced_features.py` or config section in `ultimate_trading_system.py`
+
+## ⚖️ License
+Original project license terms still apply (MIT if unchanged).
+
+## ⚠️ Disclaimer
+Educational use only. No guarantee of performance. Use at your own risk.
 
 ---
-
-## 🎯 What is MoneyPrinter?
-
-MoneyPrinter is the **ultimate AI-powered trading system** that combines cutting-edge machine learning, advanced risk management, and real-time trading capabilities. **Best of all, it's designed to run 100% FREE with no paid services required!**
+Minimal edition prepared for focused experimentation with the Ultimate ML system.
 
 ### 💎 **100% FREE FEATURES**
 - **✅ No API Keys Required**: Uses free Yahoo Finance data by default
