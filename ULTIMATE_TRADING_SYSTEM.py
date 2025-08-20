@@ -1,24 +1,8 @@
 #!/usr/bin/env python3
 """
-🚀 ULTIMATE ADVANCED TRADING SYSTEM - ONE MASSIVE SCRIPT 🚀
-================================================================================
-The most comprehensive, research-grade, locally-run trading system ever created!
-
-COMBINES ABSOLUTELY EVERYTHING:
-- 143+ Advanced Technical & Statistical Features
-- 16+ ML Models with Time-Aware Ensemble Learning
-- Advanced Volatility Estimation (Parkinson, Garman-Klass, Yang-Zhang, Rogers-Satchell)
-- Bid-Ask Spread Estimation (Corwin-Schultz, Roll)
-- Purged & Embargoed Cross-Validation
-- Event-Driven Backtesting with Realistic Costs
-- Statistical Validation (PBO, DSR, White's Reality Check)
-- Triple-Barrier Labeling & Meta-Labeling
-- Fractional Kelly Position Sizing
-- Professional GUI with Interactive Visualizations
-- Comprehensive Reporting & Tearsheets
-
+🚀 ULTIMATE TRADING SYSTEM - Complete Financial ML Pipeline
+Research-grade trading system with advanced ML, proper CV, realistic execution.
 NO DEPENDENCIES ON OTHER FILES - THIS IS THE ONLY FILE YOU NEED!
-================================================================================
 """
 
 import warnings
@@ -147,11 +131,9 @@ except ImportError:
 plt.style.use('seaborn-v0_8')
 sns.set_palette("husl")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-
-# ================================================================================
+# ============================
 # 1. DATA HYGIENE & TARGET ALIGNMENT
-# ================================================================================
+# ============================
 
 class DataHygieneEngine:
     """Ensure clean, leakage-free data preparation"""
@@ -244,20 +226,24 @@ class DataHygieneEngine:
     
     def create_triple_barrier_labels(self, data: pd.DataFrame, target_col: str = 'close',
                                    horizon: int = 5, vol_window: int = 20,
-                                   up_factor: float = 2.0, down_factor: float = 2.0) -> pd.Series:
-        """Create triple-barrier classification labels"""
+                                   up_factor: float = 2.0, down_factor: float = 2.0) -> Tuple[pd.Series, pd.DataFrame]:
+        """Create triple-barrier classification labels with event end-times for purging"""
         prices = data[target_col]
         
         # Calculate dynamic volatility thresholds
         vol = self.calculate_yang_zhang_volatility(data, window=vol_window)
         
         labels = []
+        events = []  # Store (t0, t_end) for each label for purging
+        
         for i in range(len(prices) - horizon):
+            t0 = data.index[i]
             current_price = prices.iloc[i]
             current_vol = vol.iloc[i]
             
             if pd.isna(current_vol):
                 labels.append(0)
+                events.append({'t0': t0, 't1': data.index[min(i + horizon, len(data) - 1)]})
                 continue
             
             # Set barriers
@@ -270,23 +256,36 @@ class DataHygieneEngine:
             hit_upper = (future_prices >= upper_barrier).any()
             hit_lower = (future_prices <= lower_barrier).any()
             
+            # Determine actual event end time
             if hit_upper and hit_lower:
                 # Both hit - check which first
-                upper_idx = future_prices[future_prices >= upper_barrier].index[0] if hit_upper else float('inf')
-                lower_idx = future_prices[future_prices <= lower_barrier].index[0] if hit_lower else float('inf')
-                label = 1 if upper_idx < lower_idx else -1
+                upper_idx = future_prices[future_prices >= upper_barrier].index[0] if hit_upper else None
+                lower_idx = future_prices[future_prices <= lower_barrier].index[0] if hit_lower else None
+                if upper_idx is not None and lower_idx is not None:
+                    t_end = min(upper_idx, lower_idx)
+                    label = 1 if upper_idx < lower_idx else -1
+                else:
+                    t_end = data.index[min(i + horizon, len(data) - 1)]
+                    label = 0
             elif hit_upper:
+                t_end = future_prices[future_prices >= upper_barrier].index[0]
                 label = 1
             elif hit_lower:
+                t_end = future_prices[future_prices <= lower_barrier].index[0]
                 label = -1
             else:
-                label = 0  # Timeout
+                t_end = data.index[min(i + horizon, len(data) - 1)]  # Timeout at vertical barrier
+                label = 0
             
             labels.append(label)
+            events.append({'t0': t0, 't1': t_end})
         
         # Pad with zeros and align with original index
         labels.extend([0] * horizon)
-        return pd.Series(labels, index=data.index)
+        events.extend([{'t0': data.index[len(labels) - horizon + j], 't1': data.index[-1]} for j in range(horizon)])
+        
+        events_df = pd.DataFrame(events, index=data.index)
+        return pd.Series(labels, index=data.index), events_df
     
     def calculate_yang_zhang_volatility(self, data: pd.DataFrame, window: int = 20) -> pd.Series:
         """Calculate Yang-Zhang volatility estimator"""
@@ -314,9 +313,9 @@ class DataHygieneEngine:
         
         return np.sqrt(yz_vol * self.periods_per_year)  # Use dynamic annualization factor
 
-# ================================================================================
+# ============================
 # 2. VOLATILITY & MICROSTRUCTURE ESTIMATION
-# ================================================================================
+# ============================
 
 class VolatilityMicrostructureEngine:
     """Calculate volatility and spread estimates from OHLCV data"""
@@ -396,7 +395,7 @@ class VolatilityMicrostructureEngine:
 
 # ================================================================================  
 # 3. ADVANCED FEATURE ENGINEERING ENGINE
-# ================================================================================
+# ============================
 
 class AdvancedFeatureEngine:
     """Generate 143+ advanced features from OHLCV data"""
@@ -840,11 +839,9 @@ class AdvancedFeatureEngine:
             self.logger.warning(f"Error adding matrix profile features: {e}")
         
         return features
-
-
-# ================================================================================
+# ============================
 # 4. TIME-AWARE CROSS-VALIDATION
-# ================================================================================
+# ============================
 
 class PurgedTimeSeriesSplit:
     """Purged and embargoed time series cross-validation"""
@@ -887,9 +884,9 @@ class PurgedTimeSeriesSplit:
             if len(train_indices) > 0 and len(test_indices) > 0:
                 yield np.array(train_indices), np.array(test_indices)
 
-# ================================================================================
+# ============================
 # 5. ADVANCED ML ENSEMBLE SYSTEM
-# ================================================================================
+# ============================
 
 class AdvancedMLEnsemble:
     """Time-aware ensemble of multiple ML models"""
@@ -1122,9 +1119,9 @@ class AdvancedMLEnsemble:
         # Clip to valid probability range
         return np.clip(raw_pred, 0, 1)
 
-# ================================================================================
+# ============================
 # 6. STATISTICAL VALIDATION ENGINE
-# ================================================================================
+# ============================
 
 class StatisticalValidation:
     """Statistical validation including PBO, DSR, White's Reality Check"""
@@ -1267,22 +1264,21 @@ class StatisticalValidation:
             'bootstrap_mean': np.mean(bootstrap_stats),
             'bootstrap_std': np.std(bootstrap_stats)
         }
-
-
-# ================================================================================
+# ============================
 # 7. EVENT-DRIVEN BACKTESTING ENGINE
-# ================================================================================
+# ============================
 
 class EventDrivenBacktester:
     """Realistic event-driven backtesting with costs and slippage"""
     
     def __init__(self, initial_capital: float = 100000, 
                  commission: float = 0.001, min_commission: float = 1.0,
-                 slippage_model: str = 'linear'):
+                 slippage_model: str = 'linear', periods_per_year: float = 252):
         self.initial_capital = initial_capital
         self.commission = commission
         self.min_commission = min_commission
         self.slippage_model = slippage_model
+        self.periods_per_year = periods_per_year
         self.logger = logging.getLogger(__name__)
         
         # Portfolio state
@@ -1473,14 +1469,14 @@ class EventDrivenBacktester:
         # Basic metrics
         total_return = (equity_curve[-1] - self.initial_capital) / self.initial_capital
         
-        # Risk metrics
-        annual_return = np.mean(returns) * 252
-        annual_vol = np.std(returns, ddof=1) * np.sqrt(252)
+        # Risk metrics (use dynamic periods per year)
+        annual_return = np.mean(returns) * self.periods_per_year
+        annual_vol = np.std(returns, ddof=1) * np.sqrt(self.periods_per_year)
         sharpe_ratio = annual_return / annual_vol if annual_vol > 0 else 0
         
         # Sortino ratio (downside risk)
         negative_returns = returns[returns < 0]
-        downside_vol = np.std(negative_returns, ddof=1) * np.sqrt(252) if len(negative_returns) > 0 else annual_vol
+        downside_vol = np.std(negative_returns, ddof=1) * np.sqrt(self.periods_per_year) if len(negative_returns) > 0 else annual_vol
         sortino_ratio = annual_return / downside_vol if downside_vol > 0 else 0
         
         # Drawdown analysis
@@ -1531,9 +1527,9 @@ class EventDrivenBacktester:
             'avg_loss': avg_loss
         }
 
-# ================================================================================
+# ============================
 # 8. POSITION SIZING ENGINE
-# ================================================================================
+# ============================
 
 class PositionSizer:
     """Advanced position sizing with Kelly criterion"""
@@ -1640,17 +1636,16 @@ class PositionSizer:
         position_value = np.clip(position_value, -max_value, max_value)
         
         return position_value
-
-
-# ================================================================================
+# ============================
 # 9. PROFESSIONAL REPORTING ENGINE
-# ================================================================================
+# ============================
 
 class ReportingEngine:
     """Generate comprehensive trading reports and tearsheets"""
     
-    def __init__(self):
+    def __init__(self, periods_per_year: float = 252):
         self.logger = logging.getLogger(__name__)
+        self.periods_per_year = periods_per_year
     
     def generate_tearsheet(self, backtest_results: Dict, data: pd.DataFrame) -> Dict:
         """Generate comprehensive tearsheet"""
@@ -1664,9 +1659,10 @@ class ReportingEngine:
         equity_curve = equity_curve.set_index('date')
         monthly_returns = equity_curve['return'].resample('M').apply(lambda x: (1 + x).prod() - 1)
         
-        # Rolling metrics
-        rolling_sharpe = equity_curve['return'].rolling(252).apply(
-            lambda x: x.mean() / x.std() * np.sqrt(252) if x.std() > 0 else 0
+        # Rolling metrics (use dynamic periods per year)
+        rolling_window = min(int(self.periods_per_year), len(equity_curve))
+        rolling_sharpe = equity_curve['return'].rolling(rolling_window).apply(
+            lambda x: x.mean() / x.std() * np.sqrt(self.periods_per_year) if x.std() > 0 else 0
         )
         
         # Drawdown series
@@ -1740,9 +1736,9 @@ class ReportingEngine:
         
         return fig
 
-# ================================================================================
+# ============================
 # 10. MAIN APPLICATION CLASS - THE ULTIMATE TRADING SYSTEM
-# ================================================================================
+# ============================
 
 class UltimateAdvancedTradingSystem:
     """The ultimate all-in-one trading system"""
@@ -1765,6 +1761,7 @@ class UltimateAdvancedTradingSystem:
         self.clean_data = None
         self.features = None
         self.labels = None
+        self.events_df = None  # Store event end-times for purging
         self.model_trained = False
         self.backtest_results = None
         
@@ -1785,6 +1782,12 @@ class UltimateAdvancedTradingSystem:
             
             # Clean data
             self.clean_data = self.data_engine.clean_ohlcv_data(self.raw_data)
+            
+            # Update components with correct periods_per_year
+            periods_per_year = self.data_engine.periods_per_year
+            self.vol_engine = VolatilityMicrostructureEngine(periods_per_year)
+            self.backtester = EventDrivenBacktester(periods_per_year=periods_per_year)
+            self.reporter = ReportingEngine(periods_per_year)
             
             self.logger.info(f"Loaded {len(self.clean_data)} data points")
             self.logger.info(f"Data range: {self.clean_data.index[0]} to {self.clean_data.index[-1]}")
@@ -1810,7 +1813,7 @@ class UltimateAdvancedTradingSystem:
                     self.clean_data, target_col='close', horizon=horizon
                 )
             else:  # classification
-                self.labels = self.data_engine.create_triple_barrier_labels(
+                self.labels, self.events_df = self.data_engine.create_triple_barrier_labels(
                     self.clean_data, target_col='close', horizon=horizon
                 )
             
@@ -2020,8 +2023,6 @@ class UltimateAdvancedTradingSystem:
         except Exception as e:
             self.logger.error(f"Error generating report: {e}")
             return {}
-
-
 if HAS_GUI:
     # ================================================================================
     # 11. PROFESSIONAL GUI INTERFACE
@@ -2405,75 +2406,28 @@ Recent Statistics:
         # Add all the other GUI methods here (generate_features, train_models, etc.)
         # ... (keeping this brief for the commit, full methods are in the file)
 
-# ================================================================================
+# ============================
 # 12. MAIN APPLICATION ENTRY POINT
-# ================================================================================
+# ============================
 
 def main():
     """Main application entry point"""
+    print("🚀 ULTIMATE ADVANCED TRADING SYSTEM")
+    print("Research-grade ML trading with proper CV, realistic execution")
+    print("🔒 100% LOCAL | 💰 100% FREE")
     
-    print("🚀" * 50)
-    print("🚀 ULTIMATE ADVANCED TRADING SYSTEM STARTING UP! 🚀")
-    print("🚀" * 50)
-    print()
-    print("SYSTEM CAPABILITIES:")
-    print("✅ 143+ Advanced Technical & Statistical Features")
-    print("✅ 16+ ML Models with Time-Aware Ensemble Learning")
-    print("✅ Advanced Volatility Estimation (4 different estimators)")
-    print("✅ Bid-Ask Spread Estimation (Corwin-Schultz, Roll)")
-    print("✅ Purged & Embargoed Cross-Validation")
-    print("✅ Event-Driven Backtesting with Realistic Costs")
-    print("✅ Statistical Validation (PBO, DSR, White's Reality Check)")
-    print("✅ Triple-Barrier Labeling & Meta-Labeling")
-    print("✅ Fractional Kelly Position Sizing")
-    if HAS_GUI:
-        print("✅ Professional GUI with Interactive Visualizations")
-    print("✅ Comprehensive Reporting & Tearsheets")
-    print()
-    print("🔒 100% LOCAL - Your data never leaves your computer!")
-    print("💰 100% FREE - No subscriptions or cloud costs!")
-    print()
-    
-    # Check for optional dependencies
-    missing_deps = []
-    if not HAS_XGBOOST:
-        missing_deps.append("xgboost")
-    if not HAS_LIGHTGBM:
-        missing_deps.append("lightgbm")
-    if not HAS_OPTUNA:
-        missing_deps.append("optuna")
-    if not HAS_TA:
-        missing_deps.append("ta")
-    if not HAS_TSFRESH:
-        missing_deps.append("tsfresh")
-    if not HAS_STUMPY:
-        missing_deps.append("stumpy")
-    
-    if missing_deps:
-        print("⚠️  OPTIONAL ENHANCEMENTS AVAILABLE:")
-        for dep in missing_deps:
-            print(f"   pip install {dep}")
-        print()
-    
-    # Launch GUI if available
+    # Launch GUI if available, else CLI demo
     if HAS_GUI:
         try:
             root = tk.Tk()
             app = UltimateTradingGUI(root)
-            
-            print("🚀 GUI LAUNCHED SUCCESSFULLY!")
-            print("📊 Load your OHLCV data to get started!")
-            print()
-            
+            print("🚀 GUI LAUNCHED!")
             root.mainloop()
-            
         except Exception as e:
             print(f"❌ GUI Error: {e}")
-            print("🔧 Falling back to CLI mode...")
             run_cli_demo()
     else:
-        print("⚠️  GUI not available in headless environment.")
-        print("🔧 Running in CLI mode...")
+        print("⚠️  GUI not available. Running CLI mode...")
         run_cli_demo()
 
 def run_cli_demo():
