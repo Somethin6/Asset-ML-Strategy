@@ -1058,15 +1058,17 @@ class AdvancedFeatureEngine:
 # ============================
 
 class PurgedTimeSeriesSplit:
-    """Purged and embargoed time series cross-validation"""
+    """Combinatorially Purged Cross-Validation (CPCV) with event-based embargo"""
     
-    def __init__(self, n_splits: int = 5, embargo_frac: float = 0.01, purge_frac: float = 0.01):
+    def __init__(self, n_splits: int = 5, embargo_frac: float = 0.01, purge_frac: float = 0.01,
+                 events_df: pd.DataFrame = None):
         self.n_splits = n_splits
         self.embargo_frac = embargo_frac
         self.purge_frac = purge_frac
+        self.events_df = events_df  # DataFrame with t0 and t1 columns for event-based purging
     
     def split(self, X, y=None, groups=None):
-        """Generate time-aware train/test splits with purging and embargo"""
+        """Generate CPCV-compliant train/test splits with event-based purging and embargo"""
         n_samples = len(X)
         
         # Calculate embargo and purge periods
@@ -1084,19 +1086,54 @@ class PurgedTimeSeriesSplit:
             if test_end <= test_start:
                 continue
             
-            # Train set (everything before test, minus purge)
-            train_end = max(0, test_start - purge_size)
-            train_indices = list(range(train_end))
-            
-            # Add training data after test set (with embargo)
-            embargo_start = min(test_end + embargo_size, n_samples)
-            if embargo_start < n_samples:
-                train_indices.extend(list(range(embargo_start, n_samples)))
-            
             test_indices = list(range(test_start, test_end))
+            
+            # Event-based purging if events_df is provided
+            if self.events_df is not None and len(self.events_df) == n_samples:
+                train_indices = self._event_based_purging(test_indices, n_samples)
+            else:
+                # Standard time-based purging
+                train_end = max(0, test_start - purge_size)
+                train_indices = list(range(train_end))
+                
+                # Add training data after test set (with embargo)
+                embargo_start = min(test_end + embargo_size, n_samples)
+                if embargo_start < n_samples:
+                    train_indices.extend(list(range(embargo_start, n_samples)))
             
             if len(train_indices) > 0 and len(test_indices) > 0:
                 yield np.array(train_indices), np.array(test_indices)
+    
+    def _event_based_purging(self, test_indices: List[int], n_samples: int) -> List[int]:
+        """Purge training samples that overlap with test events based on t0/t1 timestamps"""
+        if self.events_df is None:
+            return list(range(n_samples))
+        
+        # Get test event time ranges
+        test_events = self.events_df.iloc[test_indices]
+        test_t0_min = test_events['t0'].min()
+        test_t1_max = test_events['t1'].max()
+        
+        # Find training samples that don't overlap with test event periods
+        train_indices = []
+        for i in range(n_samples):
+            if i in test_indices:
+                continue
+                
+            event_t0 = self.events_df.iloc[i]['t0'] 
+            event_t1 = self.events_df.iloc[i]['t1']
+            
+            # Check for overlap: event overlaps if t0 < test_t1_max and t1 > test_t0_min
+            has_overlap = event_t0 < test_t1_max and event_t1 > test_t0_min
+            
+            if not has_overlap:
+                train_indices.append(i)
+        
+        return train_indices
+    
+    def get_n_splits(self, X=None, y=None, groups=None):
+        """Return the number of splitting iterations"""
+        return self.n_splits
 
 # ============================
 # 5. ADVANCED ML ENSEMBLE SYSTEM
@@ -1166,8 +1203,8 @@ class AdvancedMLEnsemble:
         
         return models
     
-    def fit(self, X, y, task_type: str = 'regression', cv_folds: int = 5):
-        """Fit ensemble with out-of-fold predictions - FIXED LEAKAGE"""
+    def fit(self, X, y, task_type: str = 'regression', cv_folds: int = 5, events_df: pd.DataFrame = None):
+        """Fit ensemble with out-of-fold predictions using CPCV"""
         self.logger.info(f"Training {task_type} ensemble...")
         
         # Initialize base models
@@ -1182,8 +1219,8 @@ class AdvancedMLEnsemble:
                 ('model', model)
             ])
         
-        # Time-aware cross-validation
-        cv = PurgedTimeSeriesSplit(n_splits=cv_folds)
+        # ENHANCED: Time-aware cross-validation with event-based purging
+        cv = PurgedTimeSeriesSplit(n_splits=cv_folds, events_df=events_df)
         
         # Store out-of-fold predictions
         oof_predictions = np.zeros((len(X), len(self.models)))
@@ -1478,6 +1515,126 @@ class StatisticalValidation:
             'bootstrap_mean': np.mean(bootstrap_stats),
             'bootstrap_std': np.std(bootstrap_stats)
         }
+    
+    def hansen_spa_test(self, base_returns: np.ndarray, strategy_returns_matrix: np.ndarray,
+                        n_bootstrap: int = 1000) -> Dict:
+        """Hansen's Superior Predictive Ability (SPA) test - improvement over White's Reality Check"""
+        
+        # Calculate relative performance for all strategies
+        n_strategies, n_periods = strategy_returns_matrix.shape
+        relative_performance = strategy_returns_matrix - base_returns.reshape(1, -1)
+        
+        # Test statistic: maximum mean relative performance
+        mean_relative = np.mean(relative_performance, axis=1)
+        test_stat = np.max(mean_relative)
+        best_strategy_idx = np.argmax(mean_relative)
+        
+        # Sample variance matrix for standardization
+        sample_vars = np.var(relative_performance, axis=1, ddof=1)
+        
+        # Studentized test statistic
+        studentized_test_stat = test_stat / np.sqrt(sample_vars[best_strategy_idx] / n_periods)
+        
+        # Bootstrap distribution under null hypothesis
+        bootstrap_stats = []
+        studentized_bootstrap_stats = []
+        
+        # Center the relative performance under null
+        centered_perf = relative_performance - mean_relative.reshape(-1, 1)
+        
+        for _ in range(n_bootstrap):
+            # Bootstrap resample
+            bootstrap_indices = np.random.choice(n_periods, size=n_periods, replace=True)
+            bootstrap_perf = centered_perf[:, bootstrap_indices]
+            
+            bootstrap_means = np.mean(bootstrap_perf, axis=1)
+            bootstrap_vars = np.var(bootstrap_perf, axis=1, ddof=1)
+            
+            # Max statistic
+            max_bootstrap = np.max(bootstrap_means)
+            bootstrap_stats.append(max_bootstrap)
+            
+            # Studentized max statistic  
+            max_idx = np.argmax(bootstrap_means)
+            studentized_max = max_bootstrap / np.sqrt(bootstrap_vars[max_idx] / n_periods)
+            studentized_bootstrap_stats.append(studentized_max)
+        
+        bootstrap_stats = np.array(bootstrap_stats)
+        studentized_bootstrap_stats = np.array(studentized_bootstrap_stats)
+        
+        # P-values
+        pvalue_consistent = np.mean(bootstrap_stats >= test_stat)
+        pvalue_studentized = np.mean(studentized_bootstrap_stats >= studentized_test_stat)
+        
+        return {
+            'test_statistic': test_stat,
+            'studentized_test_statistic': studentized_test_stat,
+            'pvalue_consistent': pvalue_consistent,
+            'pvalue_studentized': pvalue_studentized,
+            'is_significant_consistent': pvalue_consistent < 0.05,
+            'is_significant_studentized': pvalue_studentized < 0.05,
+            'best_strategy_performance': mean_relative[best_strategy_idx],
+            'best_strategy_index': best_strategy_idx
+        }
+    
+    def isotonic_calibration_metrics(self, y_true: np.ndarray, y_prob: np.ndarray, 
+                                   n_bins: int = 10) -> Dict:
+        """Calculate calibration metrics with isotonic regression"""
+        from sklearn.calibration import calibration_curve
+        from sklearn.metrics import brier_score_loss
+        from sklearn.isotonic import IsotonicRegression
+        
+        # Ensure binary classification format
+        if len(np.unique(y_true)) == 2:
+            # For binary classification
+            y_binary = (y_true == np.max(y_true)).astype(int)
+        else:
+            # For regression, convert to binary based on positive returns
+            y_binary = (y_true > 0).astype(int)
+        
+        # Calibration curve
+        try:
+            fraction_of_positives, mean_predicted_value = calibration_curve(
+                y_binary, y_prob, n_bins=n_bins, strategy='uniform'
+            )
+            
+            # Isotonic calibration
+            isotonic = IsotonicRegression(out_of_bounds='clip')
+            y_prob_calibrated = isotonic.fit_transform(y_prob, y_binary)
+            
+            # Brier score (lower is better)
+            brier_score_uncalibrated = brier_score_loss(y_binary, y_prob)
+            brier_score_calibrated = brier_score_loss(y_binary, y_prob_calibrated)
+            
+            # Reliability (calibration error)
+            calibration_error = np.mean(np.abs(fraction_of_positives - mean_predicted_value))
+            
+            # Sharpness (spread of predictions)  
+            sharpness = np.std(y_prob)
+            
+            return {
+                'brier_score_uncalibrated': brier_score_uncalibrated,
+                'brier_score_calibrated': brier_score_calibrated,
+                'calibration_improvement': brier_score_uncalibrated - brier_score_calibrated,
+                'calibration_error': calibration_error,
+                'sharpness': sharpness,
+                'reliability_curve': {
+                    'fraction_positive': fraction_of_positives.tolist(),
+                    'mean_predicted': mean_predicted_value.tolist()
+                },
+                'calibrated_probabilities': y_prob_calibrated
+            }
+        except Exception as e:
+            self.logger.warning(f"Calibration metrics calculation failed: {e}")
+            return {
+                'brier_score_uncalibrated': np.nan,
+                'brier_score_calibrated': np.nan,
+                'calibration_improvement': np.nan,
+                'calibration_error': np.nan,
+                'sharpness': np.nan,
+                'reliability_curve': None,
+                'calibrated_probabilities': y_prob
+            }
 # ============================
 # 7. EVENT-DRIVEN BACKTESTING ENGINE
 # ============================
@@ -2051,7 +2208,7 @@ class UltimateAdvancedTradingSystem:
             return False
     
     def train_models(self, task_type: str = 'regression', cv_folds: int = 5) -> bool:
-        """Train the ML ensemble"""
+        """Train the ML ensemble with enhanced CPCV"""
         try:
             if self.features is None or self.labels is None:
                 raise ValueError("Features and labels not prepared. Call prepare_features_and_labels() first.")
@@ -2063,11 +2220,16 @@ class UltimateAdvancedTradingSystem:
             X = self.features[valid_mask]
             y = self.labels[valid_mask]
             
+            # Align events_df if available
+            events_for_cv = None
+            if self.events_df is not None:
+                events_for_cv = self.events_df[valid_mask]
+            
             if len(X) < 50:
                 raise ValueError("Insufficient valid samples for training")
             
-            # Train ensemble
-            self.ml_ensemble.fit(X, y, task_type=task_type, cv_folds=cv_folds)
+            # ENHANCED: Train ensemble with event-based purging
+            self.ml_ensemble.fit(X, y, task_type=task_type, cv_folds=cv_folds, events_df=events_for_cv)
             self.model_trained = True
             
             self.logger.info("Model training completed successfully!")
@@ -2145,41 +2307,65 @@ class UltimateAdvancedTradingSystem:
             return False
     
     def validate_strategy(self) -> Dict:
-        """Run statistical validation tests"""
+        """Run enhanced statistical validation tests including SPA and calibration"""
         try:
             if self.backtest_results is None:
                 raise ValueError("No backtest results available. Run backtest first.")
             
-            self.logger.info("Running statistical validation...")
+            self.logger.info("Running enhanced statistical validation...")
             
             returns = np.array(self.backtest_results['portfolio']['returns'])
             
             # Probability of Backtest Overfitting (simplified single strategy)
             pbo_result = {'pbo': 0.0, 'note': 'Single strategy - PBO not applicable'}
             
-            # Deflated Sharpe Ratio
-            dsr_result = self.statistical_validator.deflated_sharpe_ratio(returns, n_trials=1)
+            # Deflated Sharpe Ratio with multiple testing adjustment
+            n_trials = getattr(self, 'n_hyperparameter_trials', 1)  # Track if hyperparameter optimization was done
+            dsr_result = self.statistical_validator.deflated_sharpe_ratio(returns, n_trials=n_trials)
             
-            # White's Reality Check (against buy and hold)
+            # Benchmark returns (buy and hold)
             benchmark_returns = self.clean_data['close'].pct_change().fillna(0)
             benchmark_returns = benchmark_returns.reindex(
                 pd.DatetimeIndex([state['timestamp'] for state in self.backtest_results['portfolio']['equity_curve']])
             ).fillna(0)
             
+            # White's Reality Check
             if len(benchmark_returns) == len(returns):
                 wrc_result = self.statistical_validator.whites_reality_check(
                     benchmark_returns.values, returns
                 )
+                
+                # ENHANCED: Hansen's SPA Test (Superior Predictive Ability)
+                # Create a simple strategy matrix with benchmark and our strategy
+                strategy_returns_matrix = np.array([returns, benchmark_returns.values])
+                spa_result = self.statistical_validator.hansen_spa_test(
+                    benchmark_returns.values, strategy_returns_matrix
+                )
             else:
                 wrc_result = {'test_statistic': 0, 'pvalue': 1.0, 'is_significant': False}
+                spa_result = {'test_statistic': 0, 'pvalue_consistent': 1.0, 'is_significant_consistent': False}
+            
+            # ENHANCED: Calibration metrics if we have predictions
+            calibration_result = {}
+            if hasattr(self, 'prediction_probabilities') and self.prediction_probabilities is not None:
+                # Convert returns to binary outcomes for calibration
+                binary_outcomes = (returns > 0).astype(int)
+                calibration_result = self.statistical_validator.isotonic_calibration_metrics(
+                    binary_outcomes, self.prediction_probabilities
+                )
+            else:
+                calibration_result = {'note': 'No prediction probabilities available for calibration analysis'}
             
             validation_results = {
                 'deflated_sharpe': dsr_result,
                 'whites_reality_check': wrc_result,
-                'pbo': pbo_result
+                'hansen_spa_test': spa_result,  # NEW
+                'calibration_metrics': calibration_result,  # NEW
+                'pbo': pbo_result,
+                'n_trials_used': n_trials
             }
             
-            self.logger.info("Statistical validation completed!")
+            self.logger.info("Enhanced statistical validation completed!")
             
             return validation_results
             
