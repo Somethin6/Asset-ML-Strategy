@@ -157,46 +157,70 @@ class DataHygieneEngine:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        self.periods_per_year = 252  # Default, will be updated dynamically
     
     def clean_ohlcv_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Clean OHLCV data with strict validation"""
         df = data.copy()
         
-        # Ensure required columns
-        required_cols = ['Date', 'Open', 'High', 'Low', 'Close', 'Volume']
+        # Normalize column names (fix #0 from problem statement)
+        rename_map = {
+            'date':'timestamp','Date':'timestamp','Timestamp':'timestamp',
+            'open':'open','Open':'open',
+            'high':'high','High':'high',
+            'low':'low','Low':'low',
+            'close':'close','Close':'close',
+            'volume':'volume','Volume':'volume',
+            'trades':'trades','Trades':'trades'
+        }
+        df = df.rename(columns=rename_map)
+        
+        # Ensure required columns after normalization
+        required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
             raise ValueError(f"Missing required columns: {missing_cols}")
         
-        # Convert Date to datetime and set as index
-        df['Date'] = pd.to_datetime(df['Date'])
-        df = df.set_index('Date').sort_index()
+        # Convert timestamp to timezone-aware datetime and set as index
+        df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
+        df = df.set_index('timestamp').sort_index()
+        
+        # Infer frequency and estimate periods per year dynamically (not hardcoded 252)
+        freq = pd.infer_freq(df.index)
+        if freq is not None:
+            self.periods_per_year = pd.Timedelta(days=365) / pd.to_timedelta(freq.replace('B', 'D'))
+        else:
+            # Estimate from average time difference
+            avg_delta = df.index.to_series().diff().mean()
+            self.periods_per_year = pd.Timedelta(days=365) / avg_delta
+        
+        self.logger.info(f"Estimated periods per year: {self.periods_per_year:.0f}")
         
         # Validate price relationships
-        df = df[(df['High'] >= df['Low']) & 
-                (df['High'] >= df['Open']) & 
-                (df['High'] >= df['Close']) &
-                (df['Low'] <= df['Open']) & 
-                (df['Low'] <= df['Close'])]
+        df = df[(df['high'] >= df['low']) & 
+                (df['high'] >= df['open']) & 
+                (df['high'] >= df['close']) &
+                (df['low'] <= df['open']) & 
+                (df['low'] <= df['close'])]
         
         # Remove zero/negative values
-        price_cols = ['Open', 'High', 'Low', 'Close']
+        price_cols = ['open', 'high', 'low', 'close']
         df = df[(df[price_cols] > 0).all(axis=1)]
-        df = df[df['Volume'] >= 0]
+        df = df[df['volume'] >= 0]
         
         # Add adjusted close if not present
-        if 'Adj Close' not in df.columns:
-            df['Adj Close'] = df['Close']
+        if 'adj_close' not in df.columns:
+            df['adj_close'] = df['close']
         
         # Remove duplicates and ensure strictly increasing timestamp
         df = df[~df.index.duplicated(keep='first')]
         
         # Forward fill only non-price gaps (never touch OHLC)
-        df['Volume'] = df['Volume'].fillna(method='ffill')
+        df['volume'] = df['volume'].fillna(method='ffill')
         
         return df
     
-    def create_regression_labels(self, data: pd.DataFrame, target_col: str = 'Close', 
+    def create_regression_labels(self, data: pd.DataFrame, target_col: str = 'close', 
                                 horizon: int = 5) -> pd.Series:
         """Create forward-looking log return labels without leakage"""
         # Calculate future log returns
@@ -207,7 +231,7 @@ class DataHygieneEngine:
         
         return labels.dropna()
     
-    def create_triple_barrier_labels(self, data: pd.DataFrame, target_col: str = 'Close',
+    def create_triple_barrier_labels(self, data: pd.DataFrame, target_col: str = 'close',
                                    horizon: int = 5, vol_window: int = 20,
                                    up_factor: float = 2.0, down_factor: float = 2.0) -> pd.Series:
         """Create triple-barrier classification labels"""
@@ -255,10 +279,10 @@ class DataHygieneEngine:
     
     def calculate_yang_zhang_volatility(self, data: pd.DataFrame, window: int = 20) -> pd.Series:
         """Calculate Yang-Zhang volatility estimator"""
-        o = data['Open']
-        h = data['High'] 
-        l = data['Low']
-        c = data['Close']
+        o = data['open']
+        h = data['high'] 
+        l = data['low']
+        c = data['close']
         
         # Previous close
         c_prev = c.shift(1)
@@ -277,7 +301,7 @@ class DataHygieneEngine:
         
         yz_vol = rs.rolling(window).var() + k * cc.rolling(window).var() + (1 - k) * rs_vol.rolling(window).mean()
         
-        return np.sqrt(yz_vol * 252)  # Annualized
+        return np.sqrt(yz_vol * self.periods_per_year)  # Use dynamic annualization factor
 
 # ================================================================================
 # 2. VOLATILITY & MICROSTRUCTURE ESTIMATION
@@ -286,34 +310,35 @@ class DataHygieneEngine:
 class VolatilityMicrostructureEngine:
     """Calculate volatility and spread estimates from OHLCV data"""
     
-    def __init__(self):
+    def __init__(self, periods_per_year: float = 252):
         self.logger = logging.getLogger(__name__)
+        self.periods_per_year = periods_per_year
     
     def parkinson_volatility(self, data: pd.DataFrame, window: int = 20) -> pd.Series:
         """Parkinson (high-low) volatility estimator"""
-        hl_ratio = np.log(data['High'] / data['Low'])
+        hl_ratio = np.log(data['high'] / data['low'])
         parkinson_vol = hl_ratio ** 2 / (4 * np.log(2))
-        return np.sqrt(parkinson_vol.rolling(window).mean() * 252)
+        return np.sqrt(parkinson_vol.rolling(window).mean() * self.periods_per_year)
     
     def garman_klass_volatility(self, data: pd.DataFrame, window: int = 20) -> pd.Series:
         """Garman-Klass OHLC volatility estimator"""
-        h = data['High']
-        l = data['Low'] 
-        o = data['Open']
-        c = data['Close']
+        h = data['high']
+        l = data['low'] 
+        o = data['open']
+        c = data['close']
         
         gk = 0.5 * (np.log(h/l))**2 - (2*np.log(2) - 1) * (np.log(c/o))**2
-        return np.sqrt(gk.rolling(window).mean() * 252)
+        return np.sqrt(gk.rolling(window).mean() * self.periods_per_year)
     
     def rogers_satchell_volatility(self, data: pd.DataFrame, window: int = 20) -> pd.Series:
         """Rogers-Satchell (direction-robust) volatility"""
-        h = data['High']
-        l = data['Low']
-        o = data['Open'] 
-        c = data['Close']
+        h = data['high']
+        l = data['low']
+        o = data['open'] 
+        c = data['close']
         
         rs = np.log(h/c) * np.log(h/o) + np.log(l/c) * np.log(l/o)
-        return np.sqrt(rs.rolling(window).mean() * 252)
+        return np.sqrt(rs.rolling(window).mean() * self.periods_per_year)
     
     def yang_zhang_volatility(self, data: pd.DataFrame, window: int = 20) -> pd.Series:
         """Yang-Zhang (drift-independent) volatility"""
@@ -342,24 +367,21 @@ class VolatilityMicrostructureEngine:
         return spread.rolling(window).mean()
     
     def roll_spread(self, data: pd.DataFrame, window: int = 20) -> pd.Series:
-        """Roll (1984) spread from serial covariance"""
-        returns = data['Close'].pct_change()
-        
-        # Serial covariance
-        cov = returns.rolling(window).cov(returns.shift(1))
-        
-        # Roll spread (clip negative values)
-        spread = 2 * np.sqrt(np.maximum(-cov, 0))
-        
-        return spread
+        """Roll (1984) spread from serial covariance - CORRECTED VERSION"""
+        # Fix: Use price changes, not percent returns
+        px = data['close'].astype(float)
+        dpx = px.diff()
+        cov = dpx.rolling(window).cov(dpx.shift(1))
+        roll_spread = 2*np.sqrt(np.maximum(-cov, 0))
+        return roll_spread
     
     def amihud_illiquidity(self, data: pd.DataFrame, window: int = 20) -> pd.Series:
-        """Amihud illiquidity measure"""
-        returns = np.abs(data['Close'].pct_change())
-        volume = data['Volume']
-        
-        illiq = returns / volume
-        return illiq.rolling(window).mean()
+        """Amihud (2002) illiquidity measure - CORRECTED VERSION"""
+        # Fix: Use dollar volume (close * volume), not raw volume
+        ret = data['close'].pct_change().abs()
+        dollar_vol = data['close']*data['volume']
+        amihud = (ret / dollar_vol).rolling(window).mean()
+        return amihud
 
 # ================================================================================  
 # 3. ADVANCED FEATURE ENGINEERING ENGINE
@@ -866,7 +888,6 @@ class AdvancedMLEnsemble:
         self.models = {}
         self.model_weights = {}
         self.meta_model = None
-        self.scaler = RobustScaler()
         self.calibrator = None
         self.is_fitted = False
     
@@ -924,15 +945,20 @@ class AdvancedMLEnsemble:
         return models
     
     def fit(self, X, y, task_type: str = 'regression', cv_folds: int = 5):
-        """Fit ensemble with out-of-fold predictions"""
+        """Fit ensemble with out-of-fold predictions - FIXED LEAKAGE"""
         self.logger.info(f"Training {task_type} ensemble...")
         
-        # Initialize models
-        self.models = self._initialize_models(task_type)
+        # Initialize base models
+        base_models = self._initialize_models(task_type)
         self.task_type = task_type
         
-        # Scale features
-        X_scaled = self.scaler.fit_transform(X)
+        # Create pipelines to prevent leakage (fix #1 from problem statement)
+        self.models = {}
+        for name, model in base_models.items():
+            self.models[name] = Pipeline([
+                ('scaler', RobustScaler()),
+                ('model', model)
+            ])
         
         # Time-aware cross-validation
         cv = PurgedTimeSeriesSplit(n_splits=cv_folds)
@@ -941,10 +967,10 @@ class AdvancedMLEnsemble:
         oof_predictions = np.zeros((len(X), len(self.models)))
         model_scores = {}
         
-        for fold, (train_idx, val_idx) in enumerate(cv.split(X_scaled)):
+        for fold, (train_idx, val_idx) in enumerate(cv.split(X)):
             self.logger.info(f"Fold {fold + 1}/{cv_folds}")
             
-            X_train, X_val = X_scaled[train_idx], X_scaled[val_idx]
+            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
             y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
             
             for i, (name, model) in enumerate(self.models.items()):
@@ -1032,21 +1058,19 @@ class AdvancedMLEnsemble:
             self.logger.info(f"Model {name}: weight = {weight:.4f}")
     
     def predict(self, X, use_meta: bool = True):
-        """Make ensemble predictions"""
+        """Make ensemble predictions - FIXED LEAKAGE"""
         if not self.is_fitted:
             raise ValueError("Ensemble not fitted yet")
         
-        X_scaled = self.scaler.transform(X)
-        
-        # Get predictions from all models
+        # Get predictions from all pipeline models (no separate scaling needed)
         predictions = np.zeros((len(X), len(self.models)))
         
-        for i, (name, model) in enumerate(self.models.items()):
+        for i, (name, pipeline) in enumerate(self.models.items()):
             try:
-                if self.task_type == 'classification' and hasattr(model, 'predict_proba'):
-                    pred = model.predict_proba(X_scaled)[:, 1]
+                if self.task_type == 'classification' and hasattr(pipeline.named_steps['model'], 'predict_proba'):
+                    pred = pipeline.predict_proba(X)[:, 1]
                 else:
-                    pred = model.predict(X_scaled)
+                    pred = pipeline.predict(X)
                 predictions[:, i] = pred
             except Exception as e:
                 self.logger.warning(f"Error predicting with {name}: {e}")
