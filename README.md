@@ -1,34 +1,30 @@
 # Asset ML Strategy
 
-> **Legacy exploratory project.** This repository is retained as an early local financial-data/ML application and is **not** presented as a validated trading or forecasting system.
+> **Legacy exploratory project.** This repository is retained as an early Python/ML application and is **not** presented as a validated forecasting or trading system. See [`LIMITATIONS.md`](LIMITATIONS.md) before interpreting model outputs.
 
-Asset ML Strategy is a Python/tkinter application for loading OHLCV-style spreadsheet data, computing basic technical features, fitting a Random Forest regression model, and visualizing diagnostics.
+A local desktop application for loading OHLCV-style financial data, computing simple derived features, fitting a Random Forest regression model, and visualizing basic diagnostics.
 
 ## What this project demonstrates
 
-- local Excel/financial-data ingestion with pandas/openpyxl
-- feature construction from OHLCV-style inputs
-- scikit-learn Random Forest integration
+- Python data handling with pandas/NumPy
+- scikit-learn model fitting
 - sequential train/test splitting
-- basic model diagnostics and feature importance
-- matplotlib-based visualization
-- a tkinter desktop interface
+- simple technical-feature construction
+- matplotlib-based diagnostics
+- tkinter desktop GUI construction
+- Excel input validation and local processing
 
-## Important limitations
+## What this project does **not** establish
 
-This project predates my later causal/walk-forward market research tooling and should be read as an exploratory ML application rather than evidence of predictive market edge.
+- genuine out-of-sample future price forecasting skill
+- profitable trading after costs/slippage
+- causal relationships between features and returns
+- production execution reliability
+- generalization across assets or regimes
 
-In particular:
+The original implementation includes an incomplete/placeholder future-prediction path, so this repository should be read as an exploratory software artifact rather than a finished quantitative-research result.
 
-- the current formulation is not a rigorous future-return forecasting protocol
-- contemporaneous OHLCV variables can make apparent prediction performance difficult to interpret as genuine out-of-sample forecasting ability
-- the repository does not establish profitability after fees, slippage, or realistic execution
-- the future-prediction path is incomplete/placeholder-level
-- no result here should be interpreted as investment advice or as evidence that the model generalizes to live markets
-
-For quantitative research, a stronger evaluation standard is strict time causality, rolling/walk-forward origins, realistic baselines, transaction-cost sensitivity, null testing, and explicit leakage controls.
-
-## Running the application
+## Run locally
 
 ```bash
 pip install -r requirements.txt
@@ -38,15 +34,15 @@ python asset_ml_strategy.py
 Expected input columns:
 
 ```text
-Date | Open | High | Low | Close | Adj Close | Volume
+Date, Open, High, Low, Close, Adj Close, Volume
 ```
 
-A sample workbook is included for exercising the application.
+A sample workbook is included for basic application testing.
 
-## Repository status
+## Methodology note
 
-This repository is maintained primarily as historical evidence of an earlier stage of my Python/ML work. It is not a current flagship project.
+For serious time-series research, the intended successor methodology is stricter: features must be known at the forecast origin, evaluation should use rolling/walk-forward origins, obvious baselines should be reported, and any trading interpretation should include costs, leakage controls, and null/robustness tests.
 
 ## License
 
-See the repository license files/metadata for applicable terms.
+See the repository license/files for reuse terms.
