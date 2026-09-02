@@ -1,0 +1,1 @@
+Legacy exploratory repository; see README.md, LIMITATIONS.md, and METHODOLOGY.md.
